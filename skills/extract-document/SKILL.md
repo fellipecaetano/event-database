@@ -1,21 +1,38 @@
 ---
 name: extract-document
-description: Turn a gathered Document (Instagram post, ticketing page, screenshot, spreadsheet, newsletter) into Observations for the event catalogue. Use when a new file appears under examples/documents/ or log/documents/, or when asked to process, ingest or extract a document.
+description: Turn a gathered Document (Instagram post, ticketing page, screenshot, spreadsheet, newsletter) into Observations for the event catalogue. Use when a file appears in data/inbox/, or when asked to process, ingest or extract a document.
 ---
 
 # Extracting a Document into Observations
 
 Read [CONTEXT.md](../../CONTEXT.md) for the vocabulary and
 [docs/record-shapes.md](../../docs/record-shapes.md) for the record shapes before starting.
-`scripts/ingest.py` provides `uuid7`, `text_hash`, `verify_spans`, `already_ingested` and
-`append` — use them rather than re-deriving; the monotonic id logic is easy to get wrong.
+`scripts/ingest.py` provides `pending`, `retain`, `uuid7`, `text_hash`, `verify_spans` and
+`append` — use them rather than re-deriving; the monotonic id logic is easy to get wrong and
+`append` is what stops a document being ingested twice.
 
 The catalogue's differentiator is that a fabricated value never looks like an observed one.
 Everything below serves that.
 
-## 1. Identify the Document
+## 1. Take work only from the inbox
 
-`git status --short` finds it. Then work out what kind it is, because that decides the method:
+**Only files in `data/inbox/` are unprocessed.** Everything under `data/artefacts/` has
+already been ingested; re-ingesting one corrupts the catalogue, because
+corroboration counts Sources and a duplicate makes one witness look like two.
+
+```python
+import sys; sys.path.insert(0, "scripts")
+import ingest
+ingest.pending()          # files awaiting ingestion
+```
+
+If a file you were pointed at is not in that list, **stop and say so**. `ingest.append`
+refuses a Document whose input file is already recorded, so the log is protected either way —
+but discovering that after extracting 132 events wastes the work.
+
+## 2. Identify the Document
+
+Work out what kind it is, because that decides the method:
 
 | Kind | Method | `text_source` |
 |---|---|---|
@@ -25,9 +42,11 @@ Everything below serves that.
 | Image | Transcribe it, and set `artefact` to the file — it must be retained so the transcription can be re-checked (ADR 0008) | `transcribed` |
 | `.xlsx` | Convert, retain the original as `artefact`. Beware: Excel stores dates as serial numbers | `transcribed` |
 
-Run `already_ingested(text)` before writing anything.
+Call `ingest.retain(path)` to move the file out of the inbox and into the artefacts
+directory. It returns the stored path and its hash, which become `artefact` and
+`artefact_hash` on the Document.
 
-## 2. Establish the Source
+## 3. Establish the Source
 
 `source` is a stable slug — `instagram/example-venue`, `fastix`, `substack/ao-vivo`. It must be
 **identical for every future Document from the same publisher**, because corroboration counts
@@ -41,13 +60,13 @@ compiles from other listings — a compiler agreeing with its own sources is not
 A Source's kind (`venue-channel`, `ticketing`, `listings`, `promoter`, `aggregator`,
 `directory`, `self`) is recorded once, as an override on `source:<slug>`, never on the Document.
 
-## 3. Check what can be checked
+## 4. Check what can be checked
 
 Verify anything the document asserts that a computer can confirm — a stated weekday against
 the actual calendar (`date -j -f "%Y-%m-%d" "2026-08-08" "+%A"`), a date range against the
 rows it contains. Silent contradictions here are how bad data enters looking fine.
 
-## 4. Decide the subjects
+## 5. Decide the subjects
 
 **One Observation covers everything the Document says about one subject.** A ticketing page
 that names an event and describes its venue yields two Observations, not one. A newsletter
@@ -57,7 +76,7 @@ within the Document, since it makes one claim per venue and not one per row.
 Mint each `subject.id` fresh. Extraction never resolves identity — that is what Matches are
 for, and fusing the two destroys the raw string Aliases are built from.
 
-## 5. Write the claims
+## 6. Write the claims
 
 Every claim carries `spans`, an array of strings occurring **verbatim** in the retained text,
 plus either a `value` or `"unknown": true`. A value not literally in the text carries a `rule`
@@ -80,7 +99,7 @@ writes `(abertura)` when it means doors, so a bare time is a showtime — mappin
 its padding intact; normalisation is venue matching's job, and the raw string is what Aliases
 are made from.
 
-## 6. Verify and report
+## 7. Verify and report
 
 Call `verify_spans(observations, text)`. It must pass before anything is written.
 
@@ -104,7 +123,7 @@ Document *failed* to supply. The gaps matter as much as the content.
 
 ## Worked precedents
 
-`examples/` holds three that between them cover most of what goes wrong:
+`data/` holds three that between them cover most of what goes wrong:
 
 - **The NIÁ Instagram post** — names no venue. Records no venue.
 - **The FasTix ticketing page** — names its venue, so two subjects from one Document. No

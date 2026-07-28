@@ -11,7 +11,7 @@ Where to find things:
 | What a word means | [CONTEXT.md](../CONTEXT.md) |
 | Hard-to-reverse decisions | [docs/adr/](./adr) |
 | Everything else decided | this file |
-| Rules to follow while coding | [CLAUDE.md](../CLAUDE.md) |
+| Rules to follow while coding | [AGENTS.md](../AGENTS.md) |
 | What record shapes look like | [record-shapes.md](./record-shapes.md) |
 | How we got here | [sessions/](./sessions) |
 
@@ -152,6 +152,39 @@ under **[Still open](#still-open)** at the end.
       them from an append-only log, so correcting a mistyped name would break a reference that
       cannot be edited. Naming by Document id or by content hash avoids both problems and
       remains available if directory listings ever need to mean something.
+- [x] **Preventing re-ingestion by an agent with no context.** Three layers, because an agent
+      arriving cold is exactly the one that skips documentation.
+
+      Gathered files wait in `data/inbox/` and are moved to `data/artefacts/` on ingest, so what remains
+      to be done is visible to anyone without them knowing anything. Documents record
+      `artefact_hash`, the SHA-256 of the input file's bytes. `ingest.append` refuses a
+      Document whose hash is already recorded — the only layer that holds when the other two
+      are ignored. The skill's first step is to take work only from the inbox.
+
+      The directory is advisory and the hash authoritative, which makes the duplication
+      harmless: a file restored by git or moved back by hand cannot produce a duplicate.
+
+      `text_hash` cannot do this job. It identifies content, and two agents reading one HTML
+      file keep different text, so it answers "is this content held" and not "has this file
+      been processed". Conflating the two left the guard unable to detect a file it had
+      already ingested.
+- [x] **`data/` is the log, and it is append-only without exception.** There is no scratch
+      copy. A separate `examples/` tree was considered and rejected: it would let a shape change
+      be *tested* but not *landed*, since applying the result would still be the rewrite the
+      rule forbids — and two directories of near-identical records is the duplication
+      everything else here works to avoid.
+
+      Versioning the draft — permitting rewrites while `v: 1` records exist — was also
+      rejected. It would make the strongest invariant in the system conditional, with no
+      forcing function to ever end the exception, and agents read a conditional rule as
+      permission.
+
+      A shape change lands by **re-extraction**: read the retained Artefact again, append new
+      Observations, and the fold prefers them because a newer Extractor outranks an older one.
+      That path exists for Observations only. A change to the Document shape is currently
+      blocked by the duplicate guard in `ingest.append`, and judgements cannot be regenerated
+      at all. The rule therefore bites hardest on the records that are irreplaceable, which is
+      the right way round, but it means those changes must be rare and deliberate.
 - [x] **What validates a record.** The CLI validates on the way in, but it cannot be a gate:
       the log is plain JSONL by design, so anything can append directly. A separate verify
       pass over the log — schema, referential integrity, required fields, known Extractors —

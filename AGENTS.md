@@ -20,9 +20,9 @@ Keep this file short. A long one stops being read.
 Each of these follows from a recorded decision. Breaking one means changing its source
 first — the link is where the reasoning lives, and it is not repeated here.
 
-**The log is append-only.** `log/` is never edited, reordered, deduplicated or rewritten.
+**The log is append-only.** `data/` is never edited, reordered, deduplicated or rewritten.
 Corrections are new records superseding old ones. Code that modifies an existing line under
-`log/` is a bug, not a shortcut. `examples/` is the opposite — edit it freely.
+`data/` is a bug, not a shortcut.
 — [ADR 0002](./docs/adr/0002-events-are-projections-over-an-append-only-observation-log.md), [ADR 0006](./docs/adr/0006-the-log-is-append-only-jsonl-the-database-is-derived.md)
 
 **Everything queryable is derived.** Any state the application needs must be reconstructible
@@ -91,5 +91,5 @@ anything goes — ask rather than assume.
 - **Naming** — _not yet decided_
 - **Types and validation** — _not yet decided_
 - **Errors** — _not yet decided_
-- **Tests** — _not yet decided_ (`examples/` is intended as the validator's corpus)
+- **Tests** — _not yet decided_ (the records in `data/` are the obvious corpus)
 - **Formatting** — _not yet decided_

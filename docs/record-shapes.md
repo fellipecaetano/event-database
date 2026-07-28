@@ -49,11 +49,18 @@ Partitioned by type and by month. Types have very different volumes — Document
 judgements are a few dozen bytes — and separating them keeps greps and appends cheap.
 
 ```
-log/
+data/
+├── inbox/                        gathered files awaiting ingestion
+├── artefacts/                    retained source files, moved here on ingest
 ├── documents/2026-07.jsonl
 ├── observations/2026-07.jsonl
 └── judgements/2026-07.jsonl      matches, overrides, validations, redirects
 ```
+
+**A file in `data/inbox/` is unprocessed; a file in `data/artefacts/` has been ingested.** That is for
+the benefit of anyone — human or agent — arriving without context, who would otherwise have no
+way to tell. The directory is only advisory, though: `artefact_hash` on the Document is what
+actually decides, so a file restored by git or moved back by hand cannot cause a duplicate.
 
 ## Two kinds of record
 
@@ -114,9 +121,13 @@ The retained source text, its origin and its timestamps.
 - `text_source` is `retrieved` when the text came as text, or `transcribed` when it was read
   off an image. ADR 0007's guarantee is weaker for the latter: spans are checked against a
   transcription rather than against the source.
-- `artefact` holds the path to a retained source file. Required for images, so a
-  transcription can be re-checked, and never republished
+- `artefact` holds the path to the retained source file, and `artefact_hash` the SHA-256 of
+  its bytes. Required for images, so a transcription can be re-checked, and never republished
   ([ADR 0008](./adr/0008-images-are-retained-for-verification-never-republished.md)).
+- `artefact_hash` and `text_hash` answer different questions. *Has this file been processed?*
+  is the file's bytes. *Is this content already held?* is the text. They are not
+  interchangeable: two agents reading one HTML file keep different text — one drops the
+  comments, another the footer — so a text hash cannot tell you a file has been seen before.
 - A **Listing** needs no record type of its own. It is an `origin` that a Source keeps
   stable; fetching it repeatedly produces several Documents sharing that `origin`.
 
