@@ -97,15 +97,29 @@ The retained source text, its origin and its timestamps.
 
 ```json
 {
-  "type": "document", "id": "01K9F...", "at": "2026-07-27T14:03:11Z", "v": 1,
-  "source": "instagram/example-venue",
-  "origin": "https://instagram.com/p/ABC123",
-  "published_at": "2026-07-24T18:12:00Z",
+  "type": "document", "id": "01K9F...", "at": "2026-07-27T14:03:11Z", "v": 2,
+  "source":       { "value": "instagram/example-venue", "supplied_by": "person:reviewer" },
+  "origin":       { "value": "https://instagram.com/p/ABC123", "spans": ["instagram.com/p/ABC123"] },
+  "published_at": { "value": "2026-07-24T18:12:00Z", "spans": ["24 de julho"] },
   "retrieved_at": "2026-07-27T14:02:50Z",
   "text_source": "retrieved",
   "text": "SEXTA 13/03 · EXAMPLE VENUE\nExample Artist + guests\nabertura 22h · line-up a confirmar\nR$30"
 }
 ```
+
+**Metadata that asserts something about the world carries provenance, in the same shape as a
+claim** — `spans` when read from the text, `supplied_by` when a person answered. That covers
+`source`, `origin` and `published_at`. Metadata recording our own actions — `retrieved_at`,
+the hashes, `text_source` — does not, being self-evident.
+
+Without this, `published_at` reads identically whether it came from the Document, from a
+person who was asked, or from nowhere. It is load-bearing for resolving relative dates, and it
+was the one field with nothing enforcing the rule against presenting a guess as a fact: the
+span check covers `claims` and never looked at metadata.
+
+`v: 1` Documents carry flat metadata and mean *provenance unmarked*. They are not rewritten —
+the log is append-only, and a Document shape change has no re-ingest path, since the duplicate
+guard refuses the same artefact twice. This is what the shape version is for.
 
 - `source` names a **Source**, and carries no kind of its own — see below.
 - `text_hash` is the SHA-256 of `text`. Ingest skips content already in the log. It hashes
@@ -198,6 +212,24 @@ either dropping evidence or inventing a contiguous quote that the Document never
 
 **Extras** use the identical shape to claims, so promoting one into the core is a move, not
 a transform.
+
+### The core
+
+Only these are derived from. Anything else a Document says goes in `extras`, keyed, and is
+ignored by the fold until promoted here.
+
+**Event** — `title`, `date`, `start`, `showtime`, `end`, `venue_name`, `lineup`,
+`genre_words`, `price_from` (with `currency`), `ticket_url`, `tickets_at_door`, `status`.
+
+**Venue** — `venue_name`, `city`, `address`, `neighbourhood`, `opening_hours`.
+
+Two rules that are easy to get wrong:
+
+- **`start` and `showtime` are datetimes; `date` is a day.** Where a Document gives a day and
+  no time — a festival poster saying only "Sábado 5 dez." — the claim is `date`. Putting a bare
+  date in `start` does not fail, it just renders an empty time, which is worse.
+- **Ticket presence belongs in the core**, not in extras. It is the strongest existence signal
+  there is, and the fold cannot see extras.
 
 **Subject identity.** The `subject.id` is minted here, at ingest. Extraction does no
 matching, so every reading proposes its own Event; Matches later re-point Observations at a

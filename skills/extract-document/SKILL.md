@@ -8,8 +8,8 @@ description: Turn a gathered Document (Instagram post, ticketing page, screensho
 Read [CONTEXT.md](../../CONTEXT.md) for the vocabulary and
 [docs/record-shapes.md](../../docs/record-shapes.md) for the record shapes before starting.
 `scripts/ingest.py` provides `pending`, `retain`, `uuid7`, `text_hash`, `verify_spans` and
-`append` — use them rather than re-deriving; the monotonic id logic is easy to get wrong and
-`append` is what stops a document being ingested twice.
+`append` — use them rather than re-deriving. The monotonic id logic is easy to get wrong, and
+`append` is what stops a Document being ingested twice.
 
 The catalogue's differentiator is that a fabricated value never looks like an observed one.
 Everything below serves that.
@@ -88,6 +88,16 @@ naming how it was derived.
 - **`{"value": ..., "spans": [...], "rule": "..."}`** — derived. Legitimate, but the rule must
   be stated and defensible.
 
+**Only core fields are derived from — everything else goes in `extras` and is invisible to the
+fold.** The core is enumerated in [record-shapes.md](../../docs/record-shapes.md#the-core);
+consult it rather than guessing. Two that are easy to get wrong: **`start` and `showtime` are
+datetimes, `date` is a day** — a poster saying only "Sábado 5 dez." yields a `date` claim, not
+a `start` — and **ticket presence is core**, being the strongest existence signal there is.
+
+**Document metadata carries provenance too.** `source`, `origin` and `published_at` take the
+same shape as claims: `spans` when read from the text, `supplied_by` when you asked a person.
+`retrieved_at` and the hashes record your own actions and need neither.
+
 **In tabular data, use the whole row as the span.** A cell value like `22:00` occurs in thirty
 rows: it verifies but locates nothing.
 
@@ -101,7 +111,8 @@ are made from.
 
 ## 7. Verify and report
 
-Call `verify_spans(observations, text)`. It must pass before anything is written.
+Call `verify_spans(observations, text, document)`. Passing the Document checks its metadata
+provenance too, not only the claims. It must pass before anything is written.
 
 Then report to the user: what was extracted, every judgement call you made, and everything the
 Document *failed* to supply. The gaps matter as much as the content.
@@ -123,7 +134,7 @@ Document *failed* to supply. The gaps matter as much as the content.
 
 ## Worked precedents
 
-`data/` holds three that between them cover most of what goes wrong:
+`data/` holds four that between them cover most of what goes wrong:
 
 - **The NIÁ Instagram post** — names no venue. Records no venue.
 - **The FasTix ticketing page** — names its venue, so two subjects from one Document. No
@@ -131,3 +142,7 @@ Document *failed* to supply. The gaps matter as much as the content.
 - **The Ao Vivo newsletter** — 132 events whose dates exist only in the sheet's title, so the
   title is retained as the first line of the text. Cell colour encoded sold-out status and the
   TSV export dropped it; the legend survives, which makes the loss invisible.
+- **The Primavera Sound poster** — a two-day festival, so two Events, one per day: the door
+  model, not one Event spanning a range. It states a day and no time of day, which is a `date`
+  claim rather than a `start`. And it carries no timestamp or attribution at all, so both
+  `published_at` and `source` had to be asked for — which is what `supplied_by` records.

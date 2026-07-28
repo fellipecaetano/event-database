@@ -87,8 +87,16 @@ def pending(inbox: str = INBOX) -> list[str]:
     return [p for p in paths if ingested_hash(p) is None]
 
 
-def verify_spans(observations: list[dict], text: str) -> None:
-    """Raise unless every span occurs verbatim in the Document's text (ADR 0007)."""
+GROUNDED_METADATA = ("source", "origin", "published_at")
+
+
+def verify_spans(observations: list[dict], text: str, document: dict | None = None) -> None:
+    """Raise unless every span occurs verbatim in the Document's text (ADR 0007).
+
+    Metadata asserting something about the world is checked too. Without that,
+    published_at reads the same whether it came from the text, from a person, or
+    from nowhere.
+    """
     failures = [
         f"{o['subject']['kind']}.{field}: {span[:60]!r}"
         for o in observations
@@ -97,6 +105,23 @@ def verify_spans(observations: list[dict], text: str) -> None:
         for span in claim.get("spans", [])
         if span not in text
     ]
+
+    if document is not None and document.get("v", 1) >= 2:
+        for field in GROUNDED_METADATA:
+            meta = document.get(field)
+            if meta is None:
+                continue
+            if not isinstance(meta, dict):
+                failures.append(f"document.{field}: needs {{value, spans|supplied_by}}")
+                continue
+            if not meta.get("spans") and not meta.get("supplied_by"):
+                failures.append(f"document.{field}: no spans and no supplied_by")
+            failures += [
+                f"document.{field}: {s[:60]!r}"
+                for s in meta.get("spans", [])
+                if s not in text
+            ]
+
     if failures:
         raise SystemExit(
             f"{len(failures)} ungrounded span(s):\n  " + "\n  ".join(failures[:10])
