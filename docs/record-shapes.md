@@ -55,6 +55,35 @@ log/
 └── judgements/2026-07.jsonl      matches, overrides, validations, redirects
 ```
 
+## Two kinds of record
+
+Observations and judgements are different things, and the test is simple: **is there a
+Document behind it?**
+
+| | Observation | Judgement |
+|---|---|---|
+| Carries | `document`, `extractor`, `claims` with `spans` | `by`, `reason` |
+| Says | what a Source claimed | what we concluded |
+| Grounded in | text that can be checked | nothing — it is an act |
+| If lost | re-extract the Document and it returns | **gone permanently** |
+
+An Observation is always downstream of something read. A judgement enters by assertion: no
+amount of source data implies that a person looked at something and decided something, which
+is why judgements are recorded rather than derived, and why they outrank machine output.
+
+The boundary is *read versus asserted*, not fact versus opinion. `source:fastix kind =
+ticketing` is a plain fact about the world, and it is a judgement here only because no Document
+we hold states it.
+
+**Why not fold judgements into Observations**, treating a person as a Source? It is tempting —
+it would collapse human precedence into Source trust. But the distinction reappears in three
+less visible places: span grounding degrades from an invariant to a conditional, identity
+claims still need their own handling in the fold since they re-point references rather than set
+values, and corroboration has to start excluding person Sources, because someone asserting
+what they read in a newsletter is not a second witness to it. One visible seam is preferable to
+three hidden ones. Keeping them in separate files also keeps the handful of irreplaceable
+records legible against the hundreds that can be regenerated.
+
 ## Document
 
 The retained source text, its origin and its timestamps.

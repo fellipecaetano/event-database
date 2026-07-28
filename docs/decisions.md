@@ -88,6 +88,18 @@ under **[Still open](#still-open)** at the end.
       Venue, and an Artist if they are ever promoted. Observations carry their subject, so
       venue facts get the same provenance, Confidence, supersession and re-extraction that
       event facts do, and a closure is an ordinary claim rather than a special case.
+- [x] **Observations and judgements stay separate record types.** The test is whether a
+      Document lies behind it: an Observation is downstream of something read and carries spans
+      that can be checked; a judgement enters by assertion and carries only who made it and
+      why. Re-extraction regenerates every Observation and no judgement at all.
+
+      Folding judgements into Observations, with a person as the Source, was considered. It
+      would collapse human precedence into Source trust, which is genuinely cleaner. It was
+      rejected because the distinction reappears in three less visible places — span grounding
+      becomes conditional rather than an invariant, identity claims still fork the fold since
+      they re-point references rather than set values, and corroboration must exclude person
+      Sources or an assertion read from a newsletter counts as a second witness to it. One
+      visible seam beats three hidden ones.
 - [x] **Granularity.** One Observation is everything a Document says about one subject, as
       read on one occasion. The build pivots readings into per-field claims before folding,
       so resolution logic is identical to a fine-grained design while the log stays compact,
