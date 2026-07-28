@@ -447,9 +447,34 @@ under **[Still open](#still-open)** at the end.
 
 # Still open
 
-Nothing here blocks the next step. All of it was deferred on purpose.
+## To grill
 
-## The derived form
+Queued topics, in no particular order. Each has something concrete already pulling at it.
+
+- [ ] **Tech stack.** TypeScript was chosen for `src/` and `bin/` before any code existed, and
+      no code has been written since. Meanwhile everything actually built — `ingest.py`,
+      `check-glossary.py`, the fold prototype — is Python. The declared stack and the de facto
+      one have diverged, and the grill should start there rather than from the original choice.
+      Also unsettled beneath it: runtime, package manager, schema validation, test runner.
+
+- [ ] **Coding guidelines.** `AGENTS.md` has one style rule, on comments. Naming, types and
+      validation, errors, tests and formatting are all marked *not yet decided*, which the file
+      is explicit means "not discussed", not "anything goes". Validation is the one with a
+      dependency already waiting: record shapes are drafted in Markdown and enforced by nothing.
+
+- [ ] **Remote, secure storage for `data/`.** The log is the product and currently exists on
+      one machine plus whatever git remote there is. Three things the grill has to separate:
+      **durability** (losing `data/` loses judgements, which no re-extraction can regenerate),
+      **secrecy** (nothing here is personal, but `artefacts/` holds retained images we have
+      committed never to republish — ADR 0008), and **access** (whether anything other than
+      your machine ever needs to read or write it, which decides whether this is a backup
+      question or a hosting one).
+
+## Deferred
+
+Nothing below blocks the next step. All of it was deferred on purpose.
+
+### The derived form
 
 The valuable artefact is the log — the data and the format holding it. What gets derived
 from it depends entirely on what renders the data, and nothing does yet.
@@ -458,7 +483,7 @@ from it depends entirely on what renders the data, and nothing does yet.
 - [ ] Whether anything derived is ever committed or published, and in what form.
 - [ ] Rebuild cost, and whether incremental derivation is ever needed.
 
-## Product surface
+### Product surface
 
 Questions about an application that does not exist. Worth revisiting the moment one does,
 because "how is uncertainty presented" will push back on the Confidence tiers.
@@ -467,7 +492,7 @@ because "how is uncertainty presented" will push back on the Confidence tiers.
 - [ ] What "happening now" renders, given End is usually a Bound rather than a known time.
 - [ ] How uncertainty is presented rather than hidden.
 
-## Decided against, for now
+### Decided against, for now
 
 Each is cheap to revisit, because the log retains whatever is needed to derive it.
 
