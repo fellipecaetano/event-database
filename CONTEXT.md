@@ -153,3 +153,17 @@ _Avoid_: deletion, removal, disappearance
 Where an Event stands: scheduled, cancelled, postponed, sold out. Derived like any other
 fact and held with a Confidence, not as settled truth.
 _Avoid_: state, lifecycle, condition
+
+### How the catalogue is made
+
+**Fold**:
+The reduction of the whole log into the catalogue — settling which records describe the same
+thing, choosing between claims that disagree, and working out how sure we are of each. A
+function of the log and the rules alone, so what it produces can be thrown away and made
+again.
+_Avoid_: build, compile, ingest, ETL
+
+**Projection**:
+What a Fold produces: the catalogue as it currently stands. It holds nothing the log cannot
+make again, which is why it can be discarded without loss.
+_Avoid_: cache, snapshot, materialised view
