@@ -14,10 +14,7 @@ Keep this file short. A long one stops being read.
 
 ## Tech stack
 
-TypeScript on bun, in a workspaces monorepo:
-
-- Deployable products in `apps/`
-- Libraries on `packages/`
+A modern TypeScript monorepo. Deployables in `apps/`, libraries on `packages/`. Read the project configuration files you'd typically find in such a project for more information.
 
 ## Engineering Standard
 
