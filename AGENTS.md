@@ -71,8 +71,18 @@ distinction — a `BaileFunk` is not a `Party`.
 TypeScript. Core library in `src/`, CLI in `bin/`. Record shapes are drafted in
 [docs/record-shapes.md](./docs/record-shapes.md).
 
-Nothing else is decided. **Absence of a rule below means it has not been discussed**, not
-that anything goes — ask rather than assume.
+**Comment sparingly, and briefly.** Default to writing none. The test: if deleting a
+comment would lose nothing, it should not have been written.
+
+A comment earns its place only when the code cannot carry the information itself — a
+surprising *why*, a constraint that is invisible from where you are reading, or a
+deliberate choice that someone would otherwise "fix". Never restate what the code already
+says, and never narrate a sequence of steps that the steps themselves make obvious.
+
+Keep one to a single line wherever it will fit.
+
+Still undecided. **Absence of a rule here means it has not been discussed**, not that
+anything goes — ask rather than assume.
 
 - **Naming** — _not yet decided_
 - **Types and validation** — _not yet decided_
