@@ -1,13 +1,23 @@
-# Open Questions
+# Decisions
 
-Working list for the grilling sessions. Settled decisions live in
-[CONTEXT.md](../CONTEXT.md) (vocabulary), [docs/adr](./adr) (decisions) and
-[principles.md](./principles.md) (the reasoning that recurs across them) — this file holds
-what is still undecided, plus the answers we reached, so we can stop and resume without
-losing the thread. [grilling-2026-07-27.md](./grilling-2026-07-27.md) compacts the session
-that produced all of it, including which decisions were reversed and why.
+**The primary record for everything decided that did not warrant an ADR** — which is most of
+it. A decision earns an ADR only when it is hard to reverse, surprising, and the result of a
+real trade-off; everything else, with its reasoning, lives here.
 
-Tick items as they are resolved, and note where the answer landed.
+Where to find things:
+
+| | |
+|---|---|
+| What a word means | [CONTEXT.md](../CONTEXT.md) |
+| Hard-to-reverse decisions | [docs/adr/](./adr) |
+| Everything else decided | this file |
+| Rules to follow while coding | [CLAUDE.md](../CLAUDE.md) |
+| What record shapes look like | [record-shapes.md](./record-shapes.md) |
+| How we got here | [sessions/](./sessions) |
+
+Ticked items are settled, each with the reasoning that settled it — argue with the reasoning
+rather than only inheriting the conclusion. Unticked items are still open, and are gathered
+under **[Still open](#still-open)** at the end.
 
 ## A. Venue data model
 
@@ -173,27 +183,7 @@ Tick items as they are resolved, and note where the answer landed.
 - [x] **The venue duration prior** — no longer applies. There is no learned duration; an
       unpublished End is a Bound taken from the Venue's closing hours.
 
-## G. The derived form — deferred
-
-The valuable artefact is the log: the data and the format holding it. What gets derived from
-it depends entirely on what renders the data, and nothing does yet. Everything here waits
-until an application exists to have an opinion.
-
-- [ ] What a derived schema exposes to a consumer, and how it carries per-fact Confidence.
-- [ ] Whether anything derived is ever committed or published, and in what form.
-- [ ] Rebuild cost, and whether incremental derivation is ever needed.
-
-## H. Product surface — deferred
-
-Same reasoning: questions about an application that does not exist. Worth revisiting the
-moment one does, because "how is uncertainty presented" will push back on the Confidence
-tiers.
-
-- [ ] Whether there is any interface beyond reading the log and whatever is derived from it.
-- [ ] What "happening now" renders, given End is usually a Bound rather than a known time.
-- [ ] How uncertainty is presented rather than hidden.
-
-## I. Scope and expansion
+## G. Scope and expansion
 
 - [x] **Adding a second city.** No trigger and no gate. The architecture is already
       city-agnostic — Venues are created on sight, Sources are not city-scoped, nothing filters
@@ -216,13 +206,38 @@ tiers.
       Prices are low priority relative to other fields, and deliberately so: they are the most
       volatile data in the domain and would otherwise dominate your corrections.
 
-## J. Deferred, to revisit deliberately
+---
 
-These were decided against *for now*, with the reasoning recorded in the session. Each is
-cheap to revisit because the log retains what is needed to derive it.
+# Still open
+
+Nothing here blocks the next step. All of it was deferred on purpose.
+
+## The derived form
+
+The valuable artefact is the log — the data and the format holding it. What gets derived
+from it depends entirely on what renders the data, and nothing does yet.
+
+- [ ] What a derived schema exposes to a consumer, and how it carries per-fact Confidence.
+- [ ] Whether anything derived is ever committed or published, and in what form.
+- [ ] Rebuild cost, and whether incremental derivation is ever needed.
+
+## Product surface
+
+Questions about an application that does not exist. Worth revisiting the moment one does,
+because "how is uncertainty presented" will push back on the Confidence tiers.
+
+- [ ] Whether there is any interface beyond reading the log and whatever is derived from it.
+- [ ] What "happening now" renders, given End is usually a Bound rather than a known time.
+- [ ] How uncertainty is presented rather than hidden.
+
+## Decided against, for now
+
+Each is cheap to revisit, because the log retains whatever is needed to derive it.
 
 - [ ] The night field — revisit when a day-grouped browsing surface exists.
 - [ ] Series for recurring nights — revisit when a "this night" page is wanted.
 - [ ] Artists as entities rather than names — revisit when "where is this act playing next"
       matters.
 - [ ] Active fetching and collectors — revisit when manual gathering becomes the bottleneck.
+- [ ] A `contested` Confidence tier — revisit once real Source disagreement shows up.
+- [ ] Per-city Source trust — revisit if documents from a second city arrive early.

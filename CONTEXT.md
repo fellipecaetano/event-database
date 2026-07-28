@@ -31,15 +31,13 @@ inferred, only recorded, and accumulating them is what makes the catalogue bette
 _Avoid_: approval, verification, sign-off
 
 **Audit**:
-A check of a fact picked at random rather than because it looked wrong. Recorded apart from
-Validations, so that measuring how good the catalogue is does not quietly make it look
-better.
+A check of a fact picked at random rather than because it looked wrong, recorded apart from
+Validations.
 _Avoid_: review, spot check, QA
 
 **Provisional**:
 Said of anything we have met but not yet Validated, and which is not confident enough to
-stand on its own — a Venue a Document named that nobody has vouched for. Derived from
-Confidence and the absence of a Validation, never stored as a flag.
+stand on its own — a Venue a Document named that nobody has vouched for.
 _Avoid_: draft, pending, unverified
 
 **Start**:
@@ -58,7 +56,7 @@ _Avoid_: finish, close, until
 
 **Bound**:
 The point an Event certainly cannot still be running past, taken from when its Venue
-closes. Weaker than knowing the End, and honest in a way that guessing one would not be.
+closes. Weaker than knowing the End.
 _Avoid_: cutoff, limit, latest
 
 **Artist**:
@@ -103,8 +101,7 @@ _Avoid_: quote, excerpt, citation
 
 **Extractor**:
 Whoever or whatever read a Document — a person, a model following a prompt, a parser
-reading structured data. Extractors are ranked by trust, and a person's reading outranks a
-model's, which is what makes a correction stick.
+reading structured data. Extractors are ranked by trust.
 _Avoid_: parser, reader, agent
 
 **Observation**:
