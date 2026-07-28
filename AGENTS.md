@@ -61,9 +61,10 @@ recovered by re-reading it, which costs human time. Be greedy at extraction, rel
 derivation.
 — [ADR 0007](./docs/adr/0007-every-claim-is-grounded-in-a-span-of-its-document.md)
 
-**`src/` is the library, `bin/` is a shell.** All logic lives in `src/`; `bin/` parses
-arguments and calls into it. This is what lets an MCP server or a future scraper be another
-thin adapter instead of a duplicate.
+**`packages/core` is the library, `apps/*` are shells.** All logic lives in the core package;
+an app parses arguments and calls into it. Separate packages rather than separate folders, so
+an MCP server or a future scraper can import the core without inheriting a CLI's dependencies
+— which is the whole point, and does not survive on discipline alone.
 — [ADR 0005](./docs/adr/0005-ingestion-is-manual-behind-a-boundary-built-for-automation.md)
 
 **Use the glossary's words.** Names in code use the canonical term from
@@ -78,7 +79,8 @@ a `BaileFunk` is not a `Party`.
 
 ## Style
 
-TypeScript. Core library in `src/`, CLI in `bin/`. Record shapes are drafted in
+TypeScript on bun, in a workspaces monorepo: `packages/core` for the library, `apps/cli` for
+the command line, `apps/*` for anything later. Record shapes are drafted in
 [docs/record-shapes.md](./docs/record-shapes.md).
 
 **Comment sparingly, and briefly.** Default to writing none. The test: if deleting a

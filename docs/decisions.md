@@ -479,17 +479,73 @@ under **[Still open](#still-open)** at the end.
 
 ---
 
+## H. Code and tooling
+
+- [x] **Everything is ported; the repo needs one runtime.** `ingest.py` becomes part of
+      `packages/core` — it is not a script but the ingest boundary itself, holding id minting,
+      span verification and the duplicate guard that ADR 0005 requires every caller to share.
+      `check-links.sh` and `check-glossary.py` are rewritten in TypeScript.
+
+      The point is that anyone working here installs bun and nothing else. This repository is
+      worked on largely by agents, and three runtimes means knowing which one each file wants
+      before touching it. Costs rewriting about 150 lines that currently work, including accent
+      handling already debugged once.
+
+      Until the port happens the skill keeps pointing at the Python, since pointing it at code
+      that does not exist would break the one procedure a cold agent follows.
+- [x] **Schemas are authoritative for record shapes; the document keeps the reasoning.**
+      Validation is `zod`. Once schemas exist, `record-shapes.md` stops being the authority on
+      field lists and holds what only it can — why spans are an array, why a Source's kind moved
+      off the Document, why `v: 1` records are not rewritten — plus examples that illustrate
+      rather than bind.
+
+      This is the same split as log-holds-facts and code-holds-folding-rules, and it makes
+      drift impossible rather than merely discouraged: only one side is binding. Two
+      hand-maintained descriptions of one shape is the arrangement that produced fourteen
+      review findings.
+
+      Not yet in force. Until schemas exist there is nothing to point at, so the document
+      remains authoritative by default; it is restructured when the first schema lands.
+- [x] **Toolchain is bun** — runtime, package manager, workspaces and test runner in one
+      tool. Not yet installed; that is a prerequisite before any code is written.
+
+      The alternative considered was using nothing extra at all: Node 26 runs TypeScript
+      directly by stripping types and ships `node:test`, so npm workspaces plus `tsc --noEmit`
+      would have needed no dependencies whatsoever. bun was preferred for speed and for being
+      a single tool.
+
+      One thing it buys beyond that: bun transpiles rather than strips, so the erasable-syntax
+      constraint does not apply — `enum`, `namespace`, parameter properties and decorators all
+      work, where Node's stripping rejects them.
+- [x] **Layout is a monorepo**: `packages/core` holds the library, `apps/cli` the command
+      line, and `apps/*` anything later. The convention — deployables in `apps/`, libraries in
+      `packages/` — puts everything in its final place before the app exists, so nothing is
+      reshuffled when it arrives.
+
+      Separate packages rather than separate folders is what makes ADR 0005's boundary real:
+      something importing the core gets none of the CLI's dependencies. Within one package that
+      survives only by discipline.
+- [x] **The stack is TypeScript**, and the Python in `scripts/` will be ported. This is a
+      preference decision, not an evidence-driven one, and worth saying so plainly: the
+      evidence pointed the other way. 264 lines of working stdlib-only Python existed, `src/`
+      and `bin/` were empty, and the workload — JSONL, grouping, accent normalisation, scoring
+      — is what Python is good at. The accent handling has already been debugged there once.
+
+      It was chosen anyway because the author prefers it, expects an app to be the next step,
+      and wants a monorepo. Those are legitimate reasons and they outrank a marginal fit
+      advantage. Recorded so that whoever finds the Python later knows it was replaced
+      deliberately rather than forgotten.
+
+      What it buys beyond preference: `zod` gives validation and inferred types from one
+      definition, which closes a real gap — record shapes are currently enforced by nothing —
+      and shares types with any future app.
+
+
 # Still open
 
 ## To grill
 
 Queued topics, in no particular order. Each has something concrete already pulling at it.
-
-- [ ] **Tech stack.** TypeScript was chosen for `src/` and `bin/` before any code existed, and
-      no code has been written since. Meanwhile everything actually built — `ingest.py`,
-      `check-glossary.py`, the fold prototype — is Python. The declared stack and the de facto
-      one have diverged, and the grill should start there rather than from the original choice.
-      Also unsettled beneath it: runtime, package manager, schema validation, test runner.
 
 - [ ] **Coding guidelines.** `AGENTS.md` has one style rule, on comments. Naming, types and
       validation, errors, tests and formatting are all marked *not yet decided*, which the file
