@@ -38,6 +38,19 @@ under **[Still open](#still-open)** at the end.
       Venue. Duplicates that slip through are fixed by a recorded merge judgement, which
       needs no separate tombstone machinery — the merge record is the redirect, and
       un-merging is a superseding judgement.
+- [x] **A named room is not a Venue.** The unit is the Venue and the room is a fact about the
+      Event: `Sesc Pinheiros` is one Venue, `Teatro Paulo Autran` is where in it the gig
+      happened. This follows the identity-is-the-operation rule, and it is what lets a Document
+      naming only the unit resolve at all — many write it that way, and under the alternative
+      such a Document could not be resolved to any room.
+
+      The first real week of listings made this pressing: 21 of 77 venue strings named a room,
+      and six places appeared with two different ones. Sesc alone accounted for 13 strings
+      across 9 units. The room currently sits inside the venue string, so it is recoverable by
+      parsing at fold time and needs no re-extraction.
+
+      What is given up: `Teatro Paulo Autran` seats 700 and `Auditório` does not, so for "what
+      will this gig be like" they are different places, and the catalogue will not say so.
 - [x] **Venue lifecycle.** Identity is the operation, not the address: renaming records an
       Alias and keeps the Venue, while a different club at an old address is a different
       Venue. Closure is recorded when a Document reveals it — it fits the model as an
@@ -233,6 +246,18 @@ under **[Still open](#still-open)** at the end.
       numbers are derived, never stored. This keeps "is this event real?" separable from "is
       this detail right?", which are driven by different evidence and answer different
       questions: whether to show an Event, versus how to render its details.
+- [x] **How matching itself is measured.** Audits extend to Matches, not only to facts. Sample
+      at random, stratified by who decided — scorer, LLM, person — and verify by reading both
+      source Documents, recording the outcome apart from Validations.
+
+      Sampling is weighted towards **merges**. The two errors are not symmetrical: a missed
+      match appears as a visible duplicate you would notice anyway, while a wrong merge deletes
+      an event silently and leaves no trace. Audit effort belongs where the errors are
+      invisible.
+
+      This exists because the scorer's 99% threshold is measured on recorded decisions, and
+      once an LLM works part of the band those decisions are no longer all yours. Measuring the
+      scorer against LLM verdicts would be a machine grading a machine.
 - [x] **How calibration is measured.** Passively at first: every Override is a recorded
       error, so counting Overrides per tier costs nothing and comes out of normal use. Once
       the catalogue is large enough for a sample to be a small fraction of it, add stratified
@@ -255,11 +280,31 @@ under **[Still open](#still-open)** at the end.
 
 ## E. Matching
 
-- [x] **Candidate generation.** Block on date ±1 day and score every pair inside the window.
-      At São Paulo's volume that is tens of comparisons a night, so nothing more elaborate
-      earns its keep. The window is wider than a day because after-midnight events make "the
-      same night" and "the same date" disagree. Blocking is code, so a fallback for undated or
-      misparsed records can be added later and re-run over everything already collected.
+- [x] **Candidate generation.** Block on date ±1 day **and** either the same normalised venue
+      name or a shared act. The window is wider than a day because after-midnight events make
+      "the same night" and "the same date" disagree.
+
+      Measured on the first real week: date alone gives 1,723 pairs — 630 on the busiest
+      Saturday — while date plus venue gives 6. That 287-fold reduction is what makes an LLM
+      working the review band affordable at all. Adding act overlap caught no additional pairs
+      on this data, so the union costs nothing and insures against the case venue-only misses:
+      one gig listed as "Cine Joia" by one source and "Cine Joia SP" by another.
+
+      Note this does *not* require venues to be resolved first. Blocking uses the normalised
+      string, so event and venue matching proceed independently; resolution improves recall
+      rather than enabling it.
+- [x] **A confirmed Match proposes one in the other dimension.** Confirming two Observations
+      as one Event raises a *proposed* venue Match for the names they carry, and a confirmed
+      venue Match raises proposals for the events at it. Proposals only — they enter the review
+      band like anything else.
+
+      The inference is strong: if two Observations describe one Event and name "NIÁ" and "Niá",
+      those must be the same Venue. And it compounds, since every event match teaches a venue
+      alias that makes the next event match easier.
+
+      Auto-linking the implication was rejected. One wrong event match would silently create a
+      wrong venue alias, which then contaminates every future venue resolution — an error that
+      spreads rather than sits still.
 - [x] **Thresholds.** Everything is reviewed until a few hundred Matches are recorded, then
       the auto-link threshold is set to whatever those decisions show to be at least 99%
       precise, and re-measured as more accumulate. Thresholds are derived from your own
@@ -269,11 +314,84 @@ under **[Still open](#still-open)** at the end.
       visible duplicate and loses nothing, while a wrong merge silently deletes a real event
       and leaves no trace in the interface. Auto-reject can be looser, since its failure mode
       is only a duplicate.
+- [x] **What a review can conclude.** Same, different, or defer-until-new-evidence. The first
+      two record a Match; the third records that the question was looked at and could not be
+      settled, and suppresses the item until an Observation newer than the deferral touches
+      either subject — at which point it returns with more to go on. No new machinery: the fold
+      compares the deferral's timestamp against the newest Observation on either side.
+
+      Two outcomes would have been simpler, but a reviewer with genuinely insufficient evidence
+      then either guesses — recording a human judgement, which outranks everything, on no basis
+      — or skips, and a skipped item returns forever. A plain "unsure" verdict has the opposite
+      failure: it buries the item permanently at the moment later evidence would have helped
+      most.
+- [x] **Who works the review band.** Either you or an LLM. The band stays open to a person at
+      all times — the LLM is an accelerant, not the owner of it, and you review as much or as
+      little as you want.
+
+      An LLM acting as a second matcher reads both source Documents, which is evidence a string
+      scorer cannot see, and records verdicts under its own id. Trust ranks human, then LLM,
+      then scorer.
+
+      **Review blind.** Whoever decides must not be shown a machine verdict beforehand. A
+      person's Match recorded by agreeing with an on-screen suggestion is not independent
+      evidence, and measuring the matcher against such decisions measures it against itself.
+      The evidence is shown; the machine's answer is revealed afterwards. This is what keeps
+      your decisions usable as ground truth even when the LLM has already worked an item.
 - [x] **The review queue.** Derived, not stored — pending decisions in the review band,
       computed at build time — and worked through the same CLI. Ordered by impact: how soon
       the affected Event happens, and how many things the decision unblocks. Attention is the
       scarce input to the whole flywheel, and decisions expire worthless once the event has
       passed.
+- [x] **What may auto-link a Venue.** An exact match on the normalised name — room stripped,
+      accents stripped, lower-cased — with the same neighbourhood. Nothing else. Every
+      probabilistic match goes to review.
+
+      Exact matching is deterministic rather than scored, so it does not need the calibration
+      the probabilistic path requires; putting `Blue Note` and `Blue Note` through a queue
+      would be ceremony. Neighbourhood is the guard against generic names colliding, and 17 of
+      70 names are short and generic. On the first week of real data this resolves 78 venue
+      observations to 70 Venues with no queue at all.
+
+      Note the evidence is lopsided and will stay that way: address appeared on 2 of 78 venue
+      observations, neighbourhood on 75. Venue matching is name plus neighbourhood in practice.
+- [x] **How the matcher compares who is playing.** By normalising `title` and `lineup` into a
+      set of acts *inside the matcher*, not as a projected field. Sources put the same fact in
+      different shapes — the Ao Vivo column is headed "Artista ou evento" and holds a single
+      act 97 times, a lineup 34 times and a festival name twice — so extraction records what
+      was said and the fold interprets it.
+
+      The signal is not optional: venue plus date does not separate two events. Bar Alto on
+      1 August has Rey Sky and Capim Limão, two different Events at one venue on one night, and
+      only who is playing tells them apart.
+- [x] **Which Matches are recorded, and which derived.** The dividing line is whether the
+      verdict can be recomputed, not whether a machine produced it.
+
+      **The scorer computes.** Candidate generation and scoring are pure functions of the log
+      and the rules, re-run from scratch each fold. Below the auto-link threshold nothing is
+      written and candidates surface in the review band. Above it the scorer writes a Match,
+      pinning the grouping so ids stay stable — accepted as a deliberate exception to the
+      derive-what-you-can rule, bought for stability of identity.
+
+      **The LLM matcher reads**, and its verdicts are *always* recorded regardless of any
+      threshold. Run the same comparison twice and it may answer differently, so its output is
+      not a function of the log; recording it is what keeps the fold deterministic. This is the
+      same reasoning that puts Observations in the log rather than regenerating them — an
+      Extraction is a reading too.
+
+      Trust ranks human, then LLM matcher, then scorer.
+- [x] **A pinned Match stands until a person overrules it.** When a better matcher disagrees
+      with an existing pin, it raises a review proposal rather than silently correcting.
+
+      The gain is that deploying an improved matcher becomes low-risk: it changes nothing
+      already pinned and only affects new candidates, instead of rewriting groupings across the
+      whole catalogue and leaving you to diff what moved. Disagreements become exactly the
+      queue items worth a person's attention.
+
+      The cost is that machine decisions become as durable as human ones, which blurs the
+      distinction the design rests on. What makes it tolerable is that nothing pins below 99%
+      demonstrated precision, so no pin is written while a matcher is immature — the two
+      approaches behave identically until a matcher has measurably earned the right to pin.
 - [x] **Merge and split.** Both are recorded Matches re-pointing Observations at a different
       Event. Merging additionally records a redirect from the retired ID to the surviving one,
       which is the only thing re-pointing cannot provide; splitting mints a new ID and leaves

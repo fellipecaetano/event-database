@@ -31,7 +31,7 @@ NOT_OURS = {
     "Queen", "Russo", "Passapusso", "Sobra", "Cerne", "Test", "Vivo", "Punk",
     "TypeScript", "Python", "Node", "Excel", "SQLite", "Postgres", "MCP", "LLM",
     "Claude", "Opus", "Crockford", "Lollapalooza", "Interlagos", "Trackers", "Audio",
-    "Fabricio", "Trio", "Agathocles",
+    "Fabricio", "Trio", "Agathocles", "Alto", "Rey", "Sky", "Capim", "Artista", "Limão",
 }
 
 
@@ -85,7 +85,7 @@ def main() -> int:
         text = "\n".join(l for l in text.split("\n") if l.count("|") < 2)  # table rows
         text = re.sub(r"[*_>|]|^\s*[-#]+\s*|\s*\[[ x]\]\s*", " ", text, flags=re.M)
         for sentence in re.split(r"(?<=[.:!?])\s+|\n", text):
-            for word in re.findall(r"(?<![`\w])([A-Z][a-z]{2,})(?![A-Za-z])", sentence)[1:]:
+            for word in re.findall(r"(?<![`\w])([A-Z][a-z]{2,})(?![A-Za-zÀ-ÿ])", sentence)[1:]:
                 if word in defined or word in NOT_OURS or word in COMMON or word in DEFINED_INLINE:
                     continue
                 counts[word] += 1
