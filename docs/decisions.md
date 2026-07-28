@@ -129,6 +129,17 @@ under **[Still open](#still-open)** at the end.
       session calls it through the shell, you call it by hand, a future collector calls it as
       a subprocess. The logic must live in a core library with the CLI as a thin shell, so an
       MCP server or a scraper becomes another thin adapter rather than a duplicate.
+- [x] **Document filenames stay arbitrary.** Whatever the operating system assigned is fine;
+      the record holds everything that matters. Naming files by retrieval timestamp was
+      considered and rejected: it would put `retrieved_at` in a second home that can disagree
+      with the record, and it is not independent verification, since the filename and the
+      field are typed by the same person at the same moment — the file's mtime is a better
+      witness and comes free.
+
+      It would also make paths semantically loaded while `origin` and `artefact` reference
+      them from an append-only log, so correcting a mistyped name would break a reference that
+      cannot be edited. Naming by Document id or by content hash avoids both problems and
+      remains available if directory listings ever need to mean something.
 - [x] **What validates a record.** The CLI validates on the way in, but it cannot be a gate:
       the log is plain JSONL by design, so anything can append directly. A separate verify
       pass over the log — schema, referential integrity, required fields, known Extractors —
@@ -161,6 +172,17 @@ under **[Still open](#still-open)** at the end.
 
       Independence matters — two aggregators copying each other are one source, not two,
       and the fold must discount that or corroboration becomes trivial to game.
+
+      **Corroboration counts distinct Sources, not distinct Documents.** Two Documents from
+      one account describing the same Event are one witness, whether that is an announcement
+      and a reminder, a post edited and re-fetched later, or the same export ingested twice by
+      accident. A venue correcting its own post is still that venue speaking, not a second
+      opinion. This needs nothing recorded at ingest — no URL, no listing id — which matters
+      because exports frequently carry no URL and chasing one is friction on the manual step.
+
+      Counting Documents instead would let an accidental re-ingest promote a fact from
+      Single-source to Corroborated on no evidence, and the inflation would survive the merge
+      that cleans up the duplicate Event.
 - [x] **Where Confidence attaches.** Per fact, with existence treated as one of those facts —
       the claim every Observation implicitly makes by describing an Event at all. Summary
       numbers are derived, never stored. This keeps "is this event real?" separable from "is

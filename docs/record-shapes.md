@@ -72,14 +72,22 @@ The retained source text, its origin and its timestamps.
 ```
 
 - `source` names a **Source**, and carries no kind of its own — see below.
+- `text_hash` is the SHA-256 of `text`. Ingest skips content already in the log. It hashes
+  the *retained text*, never the file: an Instagram export is 107 KB of wrapper around a 2 KB
+  caption, and its session tokens, view counts and relative timestamps churn on every save,
+  so a file hash would match almost nothing.
+- `origin` is the canonical URL where one is known, and is simply **absent** when it is not.
+  Exports frequently do not carry one and it is not worth chasing. A local file path is not an
+  origin — that belongs in `artefact`.
 - `published_at` is load-bearing — without it, "nesta sexta" cannot be resolved. Omit the
   key when the Source gives no timestamp.
 - `retrieved_at` differs from `at`: you may gather on Friday and ingest on Sunday.
 - `text_source` is `retrieved` when the text came as text, or `transcribed` when it was read
   off an image. ADR 0007's guarantee is weaker for the latter: spans are checked against a
   transcription rather than against the source.
-- `artefact` holds the path to the image when there is one. Retained so a transcription can
-  be re-checked, and never republished ([ADR 0008](./adr/0008-images-are-retained-for-verification-never-republished.md)).
+- `artefact` holds the path to a retained source file. Required for images, so a
+  transcription can be re-checked, and never republished
+  ([ADR 0008](./adr/0008-images-are-retained-for-verification-never-republished.md)).
 - A **Listing** needs no record type of its own. It is an `origin` that a Source keeps
   stable; fetching it repeatedly produces several Documents sharing that `origin`.
 
