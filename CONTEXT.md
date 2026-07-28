@@ -84,6 +84,11 @@ Document carries its own timestamp, without which phrases like "nesta sexta" can
 resolved, and it may describe many Events or none.
 _Avoid_: page, item, post, blob
 
+**Artefact**:
+The file a Document was read from — a page export, a screenshot, a spreadsheet. Kept so that
+what we read off it can be checked again, and never republished.
+_Avoid_: file, asset, blob, attachment, original
+
 **Listing**:
 A Source's own record of an event, where the Source keeps one — a ticketing page, for
 instance. Several Listings across different Sources may describe the same Event.
@@ -116,6 +121,17 @@ A recorded judgement that a Listing does or does not describe a given Event. Mat
 never overwritten — a later Match supersedes an earlier one, and a judgement made by a
 person outranks one made automatically.
 _Avoid_: link, mapping, dedup, association
+
+**Judgement**:
+Something we concluded rather than read — a Match, an Override, a Validation. Judgements
+enter by assertion and are grounded in nothing, which is why they must be recorded: re-reading
+every Document would bring back every Observation and no Judgement at all.
+_Avoid_: decision, ruling, annotation
+
+**Redirect**:
+The record left behind when one entity is merged into another, pointing the retired identifier
+at the surviving one so that references to it still lead somewhere.
+_Avoid_: tombstone, alias, forward
 
 **Conflict**:
 Two Sources describing the same Event but disagreeing about one of its facts.
