@@ -225,8 +225,13 @@ under **[Still open](#still-open)** at the end.
       than quoted claim, and staleness.
 
       For existence specifically: tickets being on sale is the strongest positive signal,
-      since it implies commercial commitment. Absence, an unknown or closed Venue, and
-      coverage failing to grow as the date nears all lower it.
+      since it implies commercial commitment. An unknown or closed Venue lowers it.
+
+      Two existence signals are named elsewhere but cannot fire yet, and should not be counted
+      among the working ones. **Absence** requires something to re-visit an origin, which
+      manual ingestion never does. **Coverage failing to grow as the date nears** is deferred
+      entirely — see the end of this file. Corroboration is different from both: it is fully
+      specified and fires the moment matching links two Observations.
 
       Independence matters — two aggregators copying each other are one source, not two,
       and the fold must discount that or corroboration becomes trivial to game.
@@ -484,3 +489,16 @@ Each is cheap to revisit, because the log retains whatever is needed to derive i
 - [ ] Active fetching and collectors — revisit when manual gathering becomes the bottleneck.
 - [ ] A `contested` Confidence tier — revisit once real Source disagreement shows up.
 - [ ] Per-city Source trust — revisit if documents from a second city arrive early.
+- [ ] **Coverage shape as an existence signal** — the idea that a real Event accumulates
+      mentions as it approaches, so flat coverage near the date suggests it quietly died.
+      Distinct from plain staleness, because it reads elapsed silence *relative to* the event
+      date: one mention five months before a gig six months away is normal, the same gap the
+      day before is not.
+
+      Deferred because it is unmeasurable and would add machinery for no present return. All
+      134 events have exactly one Observation, gathered across two days — a single point per
+      event, with no curve to read. Revisit once events routinely carry mentions from several
+      Sources spread over weeks, which the weekly newsletter will produce by itself.
+
+      Free to defer: it is a derivation, and Observations already carry their Documents'
+      timestamps, so the curve can be reconstructed retroactively whenever it is wanted.
