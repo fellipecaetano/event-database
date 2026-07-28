@@ -7,6 +7,10 @@ Read [CONTEXT.md](./CONTEXT.md) for the domain language and [docs/decisions.md](
 for what has been decided and why. Most of what looks like an odd choice here is deliberate
 and recorded. If a decision seems wrong, argue with the record rather than working around it.
 
+Procedures live in [skills/](./skills). Read the relevant one before starting that kind of
+work — [extract-document](./skills/extract-document/SKILL.md) covers turning a gathered
+Document into Observations.
+
 Keep this file short. A long one stops being read.
 
 ---
