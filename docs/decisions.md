@@ -21,9 +21,12 @@ under **[Still open](#still-open)** at the end.
 
 ## A. Venue data model
 
-- [x] **What does a Venue carry?** Name and city are required — city supplied from ingest
-      context where a Document does not state it, so the primary "what's on in São Paulo"
-      query has no silent gaps. Address and working hours are the main optional attributes;
+- [x] **What does a Venue carry?** Name and city are required, so the primary "what's on in
+      São Paulo" query has no silent gaps. Where a Document does not state the city, it is
+      recorded as a *derived claim* citing a span plus a stated rule — as the Ao Vivo
+      extraction did, with `rule: the newsletter covers São Paulo only`. That keeps it inside
+      span grounding rather than needing a second route past it, and it is already working
+      practice. It does lean on `rule`, which is the unbounded part of the check. Address and working hours are the main optional attributes;
       others accrete as needed.
 - [x] **What is required for a Venue to exist?** Name and city only, so a Provisional Venue
       can be born from a bare mention in a Document.
@@ -101,18 +104,10 @@ under **[Still open](#still-open)** at the end.
       Venue, and an Artist if they are ever promoted. Observations carry their subject, so
       venue facts get the same provenance, Confidence, supersession and re-extraction that
       event facts do, and a closure is an ordinary claim rather than a special case.
-- [x] **Observations and judgements stay separate record types.** The test is whether a
-      Document lies behind it: an Observation is downstream of something read and carries spans
-      that can be checked; a judgement enters by assertion and carries only who made it and
-      why. Re-extraction regenerates every Observation and no judgement at all.
-
-      Folding judgements into Observations, with a person as the Source, was considered. It
-      would collapse human precedence into Source trust, which is genuinely cleaner. It was
-      rejected because the distinction reappears in three less visible places — span grounding
-      becomes conditional rather than an invariant, identity claims still fork the fold since
-      they re-point references rather than set values, and corroboration must exclude person
-      Sources or an assertion read from a newsletter counts as a second witness to it. One
-      visible seam beats three hidden ones.
+- [x] **Observations and judgements stay separate record types.** Folding them into one, with
+      a person as a Source, was considered and rejected.
+      [record-shapes.md](./record-shapes.md#two-kinds-of-record) owns the test that separates
+      them and the three-hidden-seams argument against unifying.
 - [x] **Granularity.** One Observation is everything a Document says about one subject, as
       read on one occasion. The build pivots readings into per-field claims before folding,
       so resolution logic is identical to a fine-grained design while the log stays compact,
@@ -128,16 +123,9 @@ under **[Still open](#still-open)** at the end.
       Promoting an extra into the core is a build-time transform over log data, never a
       re-extraction. Give the extractor a suggested key vocabulary to limit drift, and review
       extras keys by frequency to spot what has earned promotion.
-- [x] **Identifier format.** UUIDv7, monotonic within a millisecond. Chosen over ULID purely
-      for standardisation — both are a millisecond timestamp followed by randomness, but
-      UUIDv7 is RFC 9562, so its format needs no explaining, its monotonic behaviour is
-      specified rather than invented, and it maps to a native database type if the derived
-      form ever becomes relational. ULID's real advantage is being shorter and easier to read
-      in a log meant to be read by eye, which was close but did not win. UUIDv4 was rejected
-      for carrying no time at all.
-
-      Sources are the exception, keyed by a stable natural slug rather than a minted id.
-      References to entities are typed strings, `kind:id`.
+- [x] **Identifier format.** UUIDv7, monotonic within a millisecond, with Sources keyed by
+      slug instead. [record-shapes.md](./record-shapes.md#identifiers) owns the format, the
+      monotonicity requirement and why ULID and UUIDv4 lost.
 - [x] **How does an Observation point at its Document and Extractor?** By ID. Documents are
       their own append-only records in the log, holding the retained source text, its origin
       and its timestamp; Observations reference one.
@@ -198,6 +186,24 @@ under **[Still open](#still-open)** at the end.
       blocked by the duplicate guard in `ingest.append`, and judgements cannot be regenerated
       at all. The rule therefore bites hardest on the records that are irreplaceable, which is
       the right way round, but it means those changes must be rare and deliberate.
+- [x] **The clock is an input to the Fold.** It takes `now` as an explicit parameter,
+      defaulting to the real time and pinnable when two runs must be comparable. Several
+      Confidence signals are time-relative — recency, staleness — so folding one log on two
+      days yields different tiers, and reproducibility is *same log, same rules, same clock*.
+
+      The alternative was dropping those signals to protect a purity claim that was never
+      accurate. They were kept: under manual gathering nothing re-visits a Source, so silence
+      over time is the only available evidence that an event announced once may have quietly
+      died. Anything diffing two rule versions must pin the clock, or the difference includes
+      the calendar.
+- [x] **A Source correcting itself is not a Conflict.** A later Document from the same Source
+      superseding its own earlier claim is a Correction: one witness changing its account, not
+      two at odds. It settles the fact rather than leaving it contested, and Confidence must not
+      read it as unresolved disagreement.
+
+      No new record type is needed — the distinction is derivable, since the fold already knows
+      each Observation's Document and each Document's Source. Without it, "recency breaks ties"
+      makes every genuine change look like a conflict that recency happened to resolve.
 - [x] **What validates a record.** The CLI validates on the way in, but it cannot be a gate:
       the log is plain JSONL by design, so anything can append directly. A separate verify
       pass over the log — schema, referential integrity, required fields, known Extractors —
@@ -215,8 +221,14 @@ under **[Still open](#still-open)** at the end.
 
 - [x] **How Confidence is computed.** As ordered tiers from explicit rules — starting with
       Validated, Corroborated and Single-source, adding Contested when real disagreements
-      appear. Tiers stay strictly about evidential support; Estimate, Stated Unknown and
-      Absence remain separate properties rather than being folded in.
+      appear. [ADR 0004](./adr/0004-the-catalogue-is-probabilistic.md) owns why tiers rather
+      than a number; what follows is the policy for computing them.
+
+      Estimate, Stated Unknown and Absence stay queryable properties of a fact in their own
+      right — you can ask whether a value was estimated without reading its tier. They are
+      also inputs to the tier, because how a value was arrived at is evidential: a value we
+      derived ourselves is weaker support than one a Source published. An earlier version of
+      this entry said they were *not* folded in, which contradicted the signal list below it.
 
       Signals that raise a fact's Confidence: independent Documents agreeing, a Source
       trusted for that particular field, your Validation, a published value rather than an
@@ -277,7 +289,9 @@ under **[Still open](#still-open)** at the end.
       were wrong — which is why the random half eventually has to exist.
 - [x] **Source trust.** Attached to a Source's *kind* — venue's own channel, ticketing
       platform, listings site, promoter channel, aggregator, you — each with a per-field trust
-      profile, overridable for an individual Source that proves better or worse. Sources are
+      profile, overridable for an individual Source that proves better or worse — that
+      override lives in code beside the trust table, never in the log, because trust is a
+      folding rule and folding rules are code. Sources are
       reliably good at different things: a venue knows its own hours and when a set moved, a
       ticketing platform knows the price and whether tickets exist, an aggregator that copies
       others knows nothing first-hand. Trusting by kind means a new Source is useful the
@@ -373,10 +387,21 @@ under **[Still open](#still-open)** at the end.
       verdict can be recomputed, not whether a machine produced it.
 
       **The scorer computes.** Candidate generation and scoring are pure functions of the log
-      and the rules, re-run from scratch each fold. Below the auto-link threshold nothing is
-      written and candidates surface in the review band. Above it the scorer writes a Match,
-      pinning the grouping so ids stay stable — accepted as a deliberate exception to the
-      derive-what-you-can rule, bought for stability of identity.
+      and the rules, re-run from scratch each fold. There are three bands, and they behave
+      differently:
+
+      - **Above the high threshold** the scorer writes a Match, pinning the grouping so ids
+        stay stable — a deliberate exception to the derive-what-you-can rule, bought for
+        stability of identity.
+      - **Below the low threshold** the pair is auto-rejected and nothing is written. Nothing
+        needs to be: the scorer reaches the same conclusion on every fold, so the pair never
+        reaches the review band and is never re-proposed to anyone.
+      - **Between them** is the review band. Nothing is written until someone or something
+        decides, and then the verdict is recorded — including `different`, which is what stops
+        a rejected pair coming back.
+
+      Only the middle band produces a recorded rejection. An auto-reject is recomputed; a
+      reviewed rejection is a judgement and must persist.
 
       **The LLM matcher reads**, and its verdicts are *always* recorded regardless of any
       threshold. Run the same comparison twice and it may answer differently, so its output is
@@ -393,10 +418,15 @@ under **[Still open](#still-open)** at the end.
       whole catalogue and leaving you to diff what moved. Disagreements become exactly the
       queue items worth a person's attention.
 
-      The cost is that machine decisions become as durable as human ones, which blurs the
-      distinction the design rests on. What makes it tolerable is that nothing pins below 99%
-      demonstrated precision, so no pin is written while a matcher is immature — the two
-      approaches behave identically until a matcher has measurably earned the right to pin.
+      The cost is *durability*, not precedence. A pin outranks another machine's later
+      derivation, but it never outranks a person — a human verdict displaces it at any time,
+      so "human decisions outrank machine ones" holds without exception. What is blurred is
+      only that a machine decision now persists the way a human one does, despite being
+      recomputable.
+
+      What makes that tolerable is that nothing pins below 99% demonstrated precision, so no
+      pin is written while a matcher is immature — the two approaches behave identically
+      until a matcher has measurably earned the right to pin.
 - [x] **Merge and split.** Both are recorded Matches re-pointing Observations at a different
       Event. Merging additionally records a redirect from the retired ID to the surviving one,
       which is the only thing re-pointing cannot provide; splitting mints a new ID and leaves
@@ -404,7 +434,11 @@ under **[Still open](#still-open)** at the end.
 
 ## F. Time details
 
-- [x] **Date-only Events.** The Start is estimated from when that Venue opens on that
+- [x] **Date-only Events.** Where the Venue's opening hours are unknown — which is currently
+      true of every Venue in the log — no Start is estimated and the Event carries only its
+      date. Inventing one would be the failure the project exists to avoid.
+
+      Where the hours *are* known: the Start is estimated from when that Venue opens on that
       weekday, marked as an Estimate and carrying lower Confidence — the mirror of the Bound,
       using hours already curated. Precision needs no field of its own: published means
       precise, Estimate means approximate. Open-ended starts ("a partir das 22h") are not this

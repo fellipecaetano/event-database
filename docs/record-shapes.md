@@ -45,7 +45,8 @@ A bare id is never a reference — the kind is part of it.
 
 ## Layout
 
-Partitioned by type and by month. Types have very different volumes — Documents carry text,
+Partitioned by type, and by the month of the record's `at` — when it was appended, not when
+anything happened in the world. Types have very different volumes — Documents carry text,
 judgements are a few dozen bytes — and separating them keeps greps and appends cheap.
 
 ```
@@ -132,9 +133,11 @@ guard refuses the same artefact twice. This is what the shape version is for.
 - `published_at` is load-bearing — without it, "nesta sexta" cannot be resolved. Omit the
   key when the Source gives no timestamp.
 - `retrieved_at` differs from `at`: you may gather on Friday and ingest on Sunday.
-- `text_source` is `retrieved` when the text came as text, or `transcribed` when it was read
-  off an image. ADR 0007's guarantee is weaker for the latter: spans are checked against a
-  transcription rather than against the source.
+- `text_source` is `retrieved` when the text came as text, `converted` when a deterministic
+  tool produced it from another format (a spreadsheet, a PDF), or `transcribed` when a model
+  read it off an image. Only `transcribed` weakens ADR 0007's guarantee, since only there are
+  spans checked against a reading rather than against the source. A conversion is repeatable
+  and carries no such penalty.
 - `artefact` holds the path to the retained source file, and `artefact_hash` the SHA-256 of
   its bytes. Required for images, so a transcription can be re-checked, and never republished
   ([ADR 0008](./adr/0008-images-are-retained-for-verification-never-republished.md)).
@@ -219,7 +222,13 @@ Only these are derived from. Anything else a Document says goes in `extras`, key
 ignored by the fold until promoted here.
 
 **Event** — `title`, `date`, `start`, `showtime`, `end`, `venue_name`, `lineup`,
-`genre_words`, `price_from` (with `currency`), `ticket_url`, `tickets_at_door`, `status`.
+`genre_words`, `price_from` (with `currency`), `tickets_exist`, `ticket_url`,
+`tickets_at_door`, `status`.
+
+`status` takes one of the values the glossary names: `scheduled`, `cancelled`, `postponed`,
+`sold_out`. `tickets_exist` is the general signal — a page saying "Venda Geral Aberta!" with
+no link and no price still asserts that tickets are on sale, and that is the strongest
+existence signal there is.
 
 **Venue** — `venue_name`, `city`, `address`, `neighbourhood`, `opening_hours`.
 
@@ -262,8 +271,17 @@ resolution, because both are "this refers to that".
 
 A `venue-name` match **is** an Alias — it is global rather than per-Observation, which is
 exactly why resolving a name once resolves every later mention. `"verdict": "different"`
-records a rejection so re-runs do not re-propose it. Later Matches supersede earlier ones,
-and `by: person:*` outranks `by: matcher@*`.
+records a rejection so re-runs do not re-propose it; `"verdict": "deferred"` records that a
+reviewer looked and could not settle it, and carries the same subject-and-entity pair, which
+is what "until an Observation touches either subject" refers to.
+
+Later Matches supersede earlier ones. `by` ranks in three tiers, not two: `person:*` outranks
+`llm:*`, which outranks `matcher:*`.
+
+**The two venue mechanisms resolve different things and do not compete.** A Match on an
+Observation decides which Venue that Observation describes, so a claim like `opening_hours`
+lands on whatever its own Observation resolves to. A `venue-name` Match decides which Venue a
+string on an *Event* refers to. Neither overrides the other.
 
 ## Override, Validation, Redirect
 
@@ -273,13 +291,15 @@ and `by: person:*` outranks `by: matcher@*`.
   "value": "2026-03-13T23:00:00-03:00",
   "by": "person:reviewer", "reason": "venue confirmed by phone" }
 
-{ "type": "validation", "id": "...", "at": "...", "v": 1,
+{ "type": "validation", "id": "...", "at": "...", "v": 2,
   "target": { "kind": "venue", "id": "01K9L..." },
-  "by": "person:reviewer" }
+  "vouched_for": { "venue_name": "Cine Joia", "city": "São Paulo" },
+  "rules": "a1b2c3d", "by": "person:reviewer" }
 
-{ "type": "validation", "id": "...", "at": "...", "v": 1,
+{ "type": "validation", "id": "...", "at": "...", "v": 2,
   "target": { "kind": "fact", "entity": "event:01K9H...", "field": "start" },
-  "by": "person:reviewer" }
+  "vouched_for": "2026-03-13T23:00:00-03:00", "tier": "corroborated",
+  "rules": "a1b2c3d", "by": "person:reviewer" }
 
 { "type": "redirect", "id": "...", "at": "...", "v": 1,
   "from": "event:01K9M...", "to": "event:01K9H...", "reason": "merged" }
@@ -289,6 +309,16 @@ Validation targets either a whole entity ("this venue is real") or a single fact
 start time is right"). Both are needed: the first is what clears a Provisional Venue, the
 second is what calibration counts.
 
+**A Validation records what it vouched for, not just what it pointed at** — the value as the
+person saw it, its tier at that moment, and `rules`, the commit of the folding rules in force.
+Without that, changing a rule and re-deriving leaves the Validation silently vouching for a
+value nobody ever saw, which is exactly what "no re-run may quietly undo a human judgement"
+forbids. When the derived value no longer matches `vouched_for`, the Validation is stale and
+the fold must say so rather than keep counting it.
+
+The same applies to Overrides, whose `value` is already recorded but which need `rules` for
+the same reason, and to the Override-counting that calibration depends on.
+
 ## Not specified yet
 
 - **Absence.** ADR 0007 requires every claim to carry a Span, and an Absence has no text to
@@ -296,6 +326,14 @@ second is what calibration counts.
   ingestion is manual, since nothing re-visits an origin. Deferred to the automation phase.
 - **Audit records.** Deferred with Audits themselves, until the catalogue is large enough
   for sampling to mean anything.
+- **`Estimate` and `Bound` have no record shape, and should not.** Both are properties of a
+  *derived* value — an End we worked out from opening hours is not something any Document
+  said. They belong to the shape of the projection, which is itself deferred until something
+  consumes it. Marked here so the omission is deliberate rather than overlooked.
+- **Source independence is unrecorded.** Corroboration is supposed to discount Sources that
+  copy each other, and nothing records which do. Deferred: no copying Source is yet in the
+  log, and inventing the encoding before seeing a real case would be guesswork. Revisit when a
+  Source is first suspected of republishing another.
 - **Source identity over time.** Sources are keyed by slug, which assumes the slug is stable.
   An Instagram handle can change. If that starts happening, Sources need minted ids with the
   slug as an Alias, exactly like Venues — not worth the indirection until it does.

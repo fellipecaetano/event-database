@@ -28,8 +28,14 @@ current scale and solvable if they arise; one file per record was the alternativ
 avoids them entirely, at the cost of tens of thousands of tiny files.
 
 The build step must stay deterministic and total: any state the application needs has to be
-reconstructible from the log alone, or it does not belong in the application. This holds for
-every entity, not only Events — Venues are derived too, and an Artist would be if promoted.
+reconstructible from the log, the rules, and the clock — or it does not belong in the
+application. The clock is an input because several Confidence signals are time-relative: an
+event nobody has mentioned in weeks looks shakier as its date approaches. So reproducibility
+is *same log, same rules, same clock*, and anything comparing two rule versions must pin it
+rather than read the system time.
+
+Derivation covers every entity, not only Events — Venues are derived too, and an Artist would
+be if promoted.
 
 The log holds two kinds of thing. Observations are claims made by Sources; Matches,
 Overrides and Validations are judgements made by people, which no amount of source data

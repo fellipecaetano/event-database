@@ -27,8 +27,10 @@ Corrections are new records superseding old ones. Code that modifies an existing
 
 **Everything queryable is derived.** Any state the application needs must be reconstructible
 from the log alone. Never persist something the fold can recompute, and never persist a
-folding rule — Source trust, thresholds, Confidence tiers live in code.
-— [ADR 0006](./docs/adr/0006-the-log-is-append-only-jsonl-the-database-is-derived.md)
+folding rule — Source trust, thresholds, Confidence tiers live in code. One deliberate
+exception: a scored Match above the auto-link threshold is written, buying stability of
+identity at the price of persisting something recomputable.
+— [ADR 0006](./docs/adr/0006-the-log-is-append-only-jsonl-the-database-is-derived.md), [decisions.md](./docs/decisions.md)
 
 **Record judgements, derive labels.** If it could be recomputed from what we already hold,
 derive it. If it required a person to decide something, record it. "Provisional" and the
@@ -42,7 +44,9 @@ re-run may quietly undo a human judgement.
 
 **Never present a guess as a fact.** Derived values are marked `Estimate`. An unpublished end
 time is a `Bound`, not an invented time. A Document declaring something unsettled is distinct
-from one saying nothing. Confidence is a tier, never a number. Filling a missing field with a
+from one saying nothing. A fact's Confidence is a tier, never a number — which says nothing
+about measurements of the system itself, such as a matcher's precision, which are numbers.
+Filling a missing field with a
 plausible default is the one failure this project cannot tolerate.
 — [ADR 0004](./docs/adr/0004-the-catalogue-is-probabilistic.md), [ADR 0007](./docs/adr/0007-every-claim-is-grounded-in-a-span-of-its-document.md)
 
@@ -63,9 +67,11 @@ thin adapter instead of a duplicate.
 — [ADR 0005](./docs/adr/0005-ingestion-is-manual-behind-a-boundary-built-for-automation.md)
 
 **Use the glossary's words.** Names in code use the canonical term from
-[CONTEXT.md](./CONTEXT.md), never one listed under `_Avoid_`. An `Event` is never a `gig`; a
-`Venue` is never a `location`. Brazilian terms stay untranslated where translating flattens a
-distinction — a `BaileFunk` is not a `Party`.
+[CONTEXT.md](./CONTEXT.md), never one listed under `_Avoid_` **for that concept**. An `Event`
+is never a `gig`; a `Venue` is never a `location`. The lists ban a word as a name for the thing
+they sit under, not the word everywhere: `file` is wrong for an Artefact and perfectly fine for
+a file on disk. Brazilian terms stay untranslated where translating flattens a distinction —
+a `BaileFunk` is not a `Party`.
 — [ADR 0001](./docs/adr/0001-english-domain-model-with-untranslated-brazilian-terms.md)
 
 ---

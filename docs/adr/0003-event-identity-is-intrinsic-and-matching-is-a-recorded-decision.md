@@ -8,9 +8,9 @@ outcome is stored as a Match — an append-only, reversible judgement — rather
 recomputed on demand.
 
 We rejected a deterministic normalised key of venue + date + headline artist. It is far
-cheaper, but it fails on the cases that dominate this domain (listings with no stated time,
-and Brazilian artist-name variance such as "Fabricio Trio" versus "Example Artist + guests"),
-and it offers no path to improvement beyond editing the normaliser. We also rejected
+cheaper, but it fails on Brazilian artist-name variance, which dominates this domain —
+"Fabricio Trio" versus "Example Artist + guests" — and it offers no path to improvement beyond
+editing the normaliser. We also rejected
 treating an anchor source's IDs as identity, which would cap our coverage and accuracy at
 that source's and would exclude most of the São Paulo underground.
 

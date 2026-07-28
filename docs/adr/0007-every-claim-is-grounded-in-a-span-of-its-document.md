@@ -8,8 +8,19 @@ the text it was derived from together with the rule applied, as when "nesta sext
 post's timestamp yield an absolute date that appears nowhere in the text.
 
 Verification is then mechanical: each span must occur in the retained source text. Anything
-ungrounded is rejected at the boundary. This turns a question of judgement into string
-matching, needing no model to check a model.
+ungrounded is rejected at the boundary, needing no model to check a model.
+
+**What this proves is narrower than it first appears, and the distinction matters.** The
+check establishes that the text a claim cites really exists in the Document. It does *not*
+establish that the text supports the value. A claim carrying a `rule` may infer a value the
+span does not state — that is the point of derived claims — so the mechanical check bounds
+fabrication of *evidence*, not of *inference*. Ungrounded invention is caught; unsound
+reasoning from real text is not. A claim reading "Venda Geral Aberta!" and concluding a price
+would pass.
+
+So the guarantee is: **nothing enters the log citing text that was never there.** Anything
+stronger requires reading the `rule`, which is why rules must be stated and defensible rather
+than merely present.
 
 We rejected extractor-reported confidence, which asks the system that might fabricate to
 report on its own fabrication. We rejected relying on human review of everything, which is

@@ -36,8 +36,8 @@ Validations.
 _Avoid_: review, spot check, QA
 
 **Provisional**:
-Said of anything we have met but not yet Validated, and which is not confident enough to
-stand on its own — a Venue a Document named that nobody has vouched for.
+Said of anything we have met but not yet Validated — a Venue a Document named that nobody
+has vouched for.
 _Avoid_: draft, pending, unverified
 
 **Start**:
@@ -79,9 +79,9 @@ _Avoid_: provider, feed, scraper
 
 **Document**:
 The verbatim text a Source gave us, kept with where it came from and when we took it — an
-Instagram caption, a newsletter, a spreadsheet, a page. Images and files are not kept. A
-Document carries its own timestamp, without which phrases like "nesta sexta" cannot be
-resolved, and it may describe many Events or none.
+Instagram caption, a newsletter, a spreadsheet, a page. The file it was read from is kept
+too, as an Artefact. A Document carries its own timestamp, without which phrases like
+"nesta sexta" cannot be resolved, and it may describe many Events or none.
 _Avoid_: page, item, post, blob
 
 **Artefact**:
@@ -117,9 +117,9 @@ says nothing where the Document was silent.
 _Avoid_: snapshot, fetch, scrape, version
 
 **Match**:
-A recorded judgement that a Listing does or does not describe a given Event. Matches are
-never overwritten — a later Match supersedes an earlier one, and a judgement made by a
-person outranks one made automatically.
+A recorded judgement that two things refer to the same one — an Observation to an Event, a
+name to a Venue. Matches are never overwritten — a later Match supersedes an earlier one,
+and a judgement made by a person outranks one made automatically.
 _Avoid_: link, mapping, dedup, association
 
 **Judgement**:
@@ -134,12 +134,18 @@ at the surviving one so that references to it still lead somewhere.
 _Avoid_: tombstone, alias, forward
 
 **Conflict**:
-Two Sources describing the same Event but disagreeing about one of its facts.
+Two Sources describing the same Event but disagreeing about one of its facts. A Source at odds
+with its own earlier Document is a Correction, not a Conflict.
 _Avoid_: mismatch, discrepancy, inconsistency
 
+**Correction**:
+A Source superseding something it said before. One witness changing its account, not two
+witnesses at odds — so it settles a fact rather than leaving it contested.
+_Avoid_: update, revision, amendment
+
 **Override**:
-A recorded ruling by a person that fixes a fact about an Event, outranking anything
-derived from Sources.
+A recorded ruling by a person that fixes a fact about anything we hold, outranking whatever
+was derived from Sources.
 _Avoid_: correction, manual edit, patch
 
 **Estimate**:
@@ -160,9 +166,10 @@ claim that an Event exists at all, and anything rendering the catalogue can read
 _Avoid_: score, certainty, probability, weight
 
 **Absence**:
-An Observation that a Listing we knew about is no longer there. Evidence, never proof — a
-Listing can vanish because the Event was cancelled, delisted, moved, reposted, or because
-we simply failed to fetch it.
+A Listing we knew about no longer being there. Evidence, never proof — a Listing can vanish
+because the Event was cancelled, delisted, moved, reposted, or because we simply failed to
+fetch it. Not currently recordable: it rests on a check rather than a reading, so it has no
+Span, and nothing re-visits an origin while gathering is by hand.
 _Avoid_: deletion, removal, disappearance
 
 **Status**:
@@ -175,8 +182,8 @@ _Avoid_: state, lifecycle, condition
 **Fold**:
 The reduction of the whole log into the catalogue — settling which records describe the same
 thing, choosing between claims that disagree, and working out how sure we are of each. A
-function of the log and the rules alone, so what it produces can be thrown away and made
-again.
+function of the log, the rules, and the moment it runs — what it produces can be thrown away
+and made again.
 _Avoid_: build, compile, ingest, ETL
 
 **Projection**:

@@ -31,7 +31,7 @@ NOT_OURS = {
     "Queen", "Russo", "Passapusso", "Sobra", "Cerne", "Test", "Vivo", "Punk",
     "TypeScript", "Python", "Node", "Excel", "SQLite", "Postgres", "MCP", "LLM",
     "Claude", "Opus", "Crockford", "Lollapalooza", "Interlagos", "Trackers", "Audio",
-    "Fabricio", "Trio", "Agathocles", "Alto", "Rey", "Sky", "Capim", "Artista", "Limão", "Primavera", "Sound",
+    "Fabricio", "Trio", "Agathocles", "Alto", "Rey", "Sky", "Capim", "Artista", "Limão", "Primavera", "Sound", "Geral", "Aberta", "Venda",
 }
 
 
