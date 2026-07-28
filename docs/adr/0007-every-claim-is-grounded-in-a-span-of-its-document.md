@@ -3,11 +3,11 @@
 Documents are read by an LLM, which can produce a plausible fact that never appeared in the
 text. Such a fact would enter the log indistinguishable from an observed one, which is the
 single failure this catalogue cannot tolerate. Every claim in an Observation therefore
-carries the span of Document text it rests on — or, where the claim is derived rather than
-quoted, the span it was derived from together with the rule applied, as when "nesta sexta"
-and a post's timestamp yield an absolute date that appears nowhere in the text.
+carries the Document text it rests on — or, where the claim is derived rather than quoted,
+the text it was derived from together with the rule applied, as when "nesta sexta" and a
+post's timestamp yield an absolute date that appears nowhere in the text.
 
-Verification is then mechanical: the span must occur in the retained source text. Anything
+Verification is then mechanical: each span must occur in the retained source text. Anything
 ungrounded is rejected at the boundary. This turns a question of judgement into string
 matching, needing no model to check a model.
 

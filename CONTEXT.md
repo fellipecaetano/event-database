@@ -95,8 +95,8 @@ over Documents we already hold, so better Extractors improve data gathered long 
 _Avoid_: parse, scrape, enrichment
 
 **Span**:
-The piece of a Document's text a claim rests on. Every claim carries one, or carries the
-Span it was derived from together with the rule applied.
+A piece of a Document's text that a claim rests on. A claim carries one or more, whether
+quoted directly or derived from them under a stated rule.
 _Avoid_: quote, excerpt, citation
 
 **Extractor**:

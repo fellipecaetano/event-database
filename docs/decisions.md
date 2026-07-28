@@ -47,9 +47,43 @@ under **[Still open](#still-open)** at the end.
       anything else, with you as the Source — or with the page you consulted as the
       Document, so curated facts carry provenance too. There is no separate curated file:
       every entity derives from the log.
+- [x] **How a Venue comes into existence.** From a Document — the venue's own profile page,
+      a maps entry — so it arrives grounded in Spans like everything else, and so the same
+      read yields the weekday opening hours the Bound depends on. Nothing else supplies those.
+- [x] **When a Document names no Venue.** Nothing is inferred at extraction. The Observation
+      records no venue rather than guessing one, because the inference that an organiser is
+      the venue holds only if that organiser is known to be a Venue — which the Document does
+      not say. The Event is linked to its Venue by an Override instead, one per Event.
+
+      This is deliberately the same path taken for matching thresholds: manual, then measured,
+      then automated. Accumulated Overrides are the evidence for a later fold rule — *a
+      Document from a venue's own channel that names no venue places the Event at that venue*
+      — and they are evidence against it too, since a promoter presenting at someone else's
+      space shows up as an Override pointing elsewhere. Writing that rule today would assert
+      it with no evidence at all.
+
+      This needs a view of Overrides grouped by Source. Without something surfacing the
+      pattern, nothing compounds and the manual act simply continues forever.
+
+- [x] **Where a Source's kind lives.** On the Source, not on the Document. A Source is an
+      entity derived from the log, keyed by a stable slug, and its kind is a recorded fact that
+      a later record can supersede. Per-kind trust profiles stay in code, since those are
+      folding rules rather than facts — which makes the kind vocabulary effectively closed, as
+      adding a kind means adding its trust profile.
+
+      Stating the kind on each Document failed within three Documents:
+      `instagram/example-venue` went in as a `promoter` and then as a `venue-channel`, and an
+      append-only log has no way to resolve that. A Source's kind is learned over time and
+      belongs to the Source.
 
 ## B. Observation record
 
+- [x] **Documents whose text comes from an image.** The image is retained so the
+      transcription can be re-checked and re-extracted, and images are never republished — see
+      [ADR 0008](./adr/0008-images-are-retained-for-verification-never-republished.md), which
+      supersedes the retention consequence in ADR 0005. A Document records which case it is in
+      `text_source`, since ADR 0007's guarantee is weaker when spans are checked against a
+      transcription rather than a source.
 - [x] **What can an Observation be about?** Anything the catalogue holds — an Event, a
       Venue, and an Artist if they are ever promoted. Observations carry their subject, so
       venue facts get the same provenance, Confidence, supersession and re-extraction that
@@ -69,6 +103,16 @@ under **[Still open](#still-open)** at the end.
       Promoting an extra into the core is a build-time transform over log data, never a
       re-extraction. Give the extractor a suggested key vocabulary to limit drift, and review
       extras keys by frequency to spot what has earned promotion.
+- [x] **Identifier format.** UUIDv7, monotonic within a millisecond. Chosen over ULID purely
+      for standardisation — both are a millisecond timestamp followed by randomness, but
+      UUIDv7 is RFC 9562, so its format needs no explaining, its monotonic behaviour is
+      specified rather than invented, and it maps to a native database type if the derived
+      form ever becomes relational. ULID's real advantage is being shorter and easier to read
+      in a log meant to be read by eye, which was close but did not win. UUIDv4 was rejected
+      for carrying no time at all.
+
+      Sources are the exception, keyed by a stable natural slug rather than a minted id.
+      References to entities are typed strings, `kind:id`.
 - [x] **How does an Observation point at its Document and Extractor?** By ID. Documents are
       their own append-only records in the log, holding the retained source text, its origin
       and its timestamp; Observations reference one.
@@ -198,8 +242,11 @@ under **[Still open](#still-open)** at the end.
       controlled vocabulary — the same pattern as venue names: record what was said, resolve
       later, let aliases accumulate from confirmed resolutions. External taxonomies were
       rejected because they are built around electronic and Anglo-American music and map badly
-      onto piseiro, brega funk, tecnobrega and sertanejo universitário. Capturing now matters
-      because extraction-time decisions are the ones that do not defer cheaply.
+      onto piseiro, brega funk, tecnobrega and sertanejo universitário.
+
+      This applies to genre stated about the *Event*. Genre stated about an individual act is
+      held back with the rest of the per-artist question below — a flat list on the Event
+      would forget which word described which act, which is most of the value.
 - [x] **Ticket and price information.** Core carries whether tickets exist, where to buy, and
       a from-price; lotes, meia-entrada and area tiers go in the extras bag, keyed, promotable
       later. Ticket presence is not optional — it is the strongest existence signal there is.
@@ -238,6 +285,17 @@ Each is cheap to revisit, because the log retains whatever is needed to derive i
 - [ ] Series for recurring nights — revisit when a "this night" page is wanted.
 - [ ] Artists as entities rather than names — revisit when "where is this act playing next"
       matters.
+- [ ] **Performance as a subject kind**, giving per-artist facts a home — the act's Instagram
+      handle, where it is from, the genre words used about it. Today `lineup` is a list of
+      names and nothing else about an act is captured.
+
+      Revisit **before roughly fifty Documents are ingested**. Unlike the other deferrals here
+      this one accrues a debt: per-artist facts are recoverable only by re-extracting the
+      Documents gathered in the meantime, and that cost scales with how many there are. It is
+      free at one Document and an evening at fifty.
+
+      While deferred, capture nothing per-artist at all. Half-structured facts under invented
+      keys would have to be unpicked later, which is the work the deferral is meant to avoid.
 - [ ] Active fetching and collectors — revisit when manual gathering becomes the bottleneck.
 - [ ] A `contested` Confidence tier — revisit once real Source disagreement shows up.
 - [ ] Per-city Source trust — revisit if documents from a second city arrive early.
