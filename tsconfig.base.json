@@ -2,8 +2,12 @@
   "compilerOptions": {
     "target": "ES2024",
     "lib": ["ES2024"],
+    "types": ["node"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "paths": {
+      "@event-database/core": ["./packages/core/src/index.ts"]
+    },
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,

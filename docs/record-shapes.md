@@ -1,7 +1,8 @@
 # Record shapes
 
-**Status: draft.** Written to be tested against real Documents by hand before any code
-exists. Expect it to change — that is what it is for.
+**The authoritative record schemas live in
+[`packages/core/src/records.ts`](../packages/core/src/records.ts).** This document owns the
+reasoning and illustrates the shapes; its examples are not a second schema.
 
 Every line of the log is one JSON object. Vocabulary is defined in
 [CONTEXT.md](../CONTEXT.md); the reasoning behind these choices is in [the ADRs](./adr) and

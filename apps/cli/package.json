@@ -1,0 +1,19 @@
+{
+  "name": "@event-database/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "event-database": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@event-database/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2"
+  }
+}

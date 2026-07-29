@@ -3,7 +3,14 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "build/**", ".next/**"],
+    ignores: [
+      "**/dist/**",
+      "node_modules/**",
+      "build/**",
+      ".next/**",
+      "eslint.config.js",
+      "vitest.config.ts",
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
@@ -27,7 +34,7 @@ export default tseslint.config(
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-misused-promises": "error",
       "no-async-promise-executor": "error",
-      "await-thenable": "error",
+      "@typescript-eslint/await-thenable": "error",
       "@typescript-eslint/explicit-function-return-type": [
         "error",
         { allowExpressions: true },
@@ -56,6 +63,12 @@ export default tseslint.config(
         },
       ],
       "no-console": ["warn", { allow: ["warn", "error"] }],
+    },
+  },
+  {
+    files: ["**/*.test.ts"],
+    rules: {
+      "@typescript-eslint/no-magic-numbers": "off",
     },
   },
 );

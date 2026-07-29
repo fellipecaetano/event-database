@@ -1,0 +1,5 @@
+data/
+**/*.md
+**/dist/
+node_modules/
+.pnpm-store/

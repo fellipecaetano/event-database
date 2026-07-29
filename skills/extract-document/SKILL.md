@@ -7,9 +7,9 @@ description: Turn a gathered Document (Instagram post, ticketing page, screensho
 
 Read [CONTEXT.md](../../CONTEXT.md) for the vocabulary and
 [docs/record-shapes.md](../../docs/record-shapes.md) for the record shapes before starting.
-`scripts/ingest.py` provides `pending`, `retain`, `uuid7`, `text_hash`, `verify_spans` and
-`append` — use them rather than re-deriving. The monotonic id logic is easy to get wrong, and
-`append` is what stops a Document being ingested twice.
+The TypeScript CLI validates, mints identifiers, hashes, retains and appends — use it rather
+than re-deriving any of those operations. The monotonic UUIDv7 logic is easy to get wrong, and
+the CLI is what stops a Document being ingested twice.
 
 The catalogue's differentiator is that a fabricated value never looks like an observed one.
 Everything below serves that.
@@ -20,14 +20,13 @@ Everything below serves that.
 already been ingested; re-ingesting one corrupts the catalogue, because
 corroboration counts Sources and a duplicate makes one witness look like two.
 
-```python
-import sys; sys.path.insert(0, "scripts")
-import ingest
-ingest.pending()          # files awaiting ingestion
+```sh
+pnpm build
+pnpm catalogue pending
 ```
 
-If a file you were pointed at is not in that list, **stop and say so**. `ingest.append`
-refuses a Document whose input file is already recorded, so the log is protected either way —
+If a file you were pointed at is not in that list, **stop and say so**. The ingest command
+refuses an Artefact whose bytes are already recorded, so the log is protected either way —
 but discovering that after extracting 132 events wastes the work.
 
 ## 2. Identify the Document
@@ -40,11 +39,10 @@ Work out what kind it is, because that decides the method:
 | HTML with no structured data | Strip scripts, styles and tags; keep the meaningful content, drop nav and footer chrome | `retrieved` |
 | CSV / TSV | Parse the columns. This is a parser's job, not a reading task | `retrieved` |
 | Image | Transcribe it, and set `artefact` to the file — it must be retained so the transcription can be re-checked (ADR 0008) | `transcribed` |
-| `.xlsx` | Convert, retain the original as `artefact`. Beware: Excel stores dates as serial numbers | `transcribed` |
+| `.xlsx` | Convert, retain the original as `artefact`. Beware: Excel stores dates as serial numbers | `converted` |
 
-Call `ingest.retain(path)` to move the file out of the inbox and into the artefacts
-directory. It returns the stored path and its hash, which become `artefact` and
-`artefact_hash` on the Document.
+Do not move the file yourself. The ingest command moves it from the inbox to the Artefacts
+directory only after the complete draft validates.
 
 ## 3. Establish the Source
 
@@ -109,10 +107,63 @@ writes `(abertura)` when it means doors, so a bare time is a showtime — mappin
 its padding intact; normalisation is venue matching's job, and the raw string is what Aliases
 are made from.
 
-## 7. Verify and report
+## 7. Write the draft, ingest and report
 
-Call `verify_spans(observations, text, document)`. Passing the Document checks its metadata
-provenance too, not only the claims. It must pass before anything is written.
+Write one JSON draft with this shape:
+
+```json
+{
+  "document": {
+    "source": { "value": "instagram/example", "supplied_by": "person:reviewer" },
+    "retrieved_at": "2026-07-28T12:00:00Z",
+    "text_source": "retrieved",
+    "text": "retained source text"
+  },
+  "extractor": "claude-opus-5/manual@draft",
+  "observations": [
+    {
+      "subject": "event",
+      "claims": {},
+      "extras": {}
+    }
+  ]
+}
+```
+
+`origin` and `published_at` use the same `{value, spans|supplied_by}` shape as `source`.
+Observation drafts omit all identifiers and envelopes; the CLI owns them. The Extractor must
+be registered in the CLI's known set before ingestion.
+
+Then run:
+
+```sh
+pnpm catalogue ingest /path/to/draft.json data/inbox/the-artefact
+```
+
+If this is the first Document for a Source and its kind was established, write a separate
+Judgement draft:
+
+```json
+{
+  "type": "override",
+  "entity": "source:instagram/example",
+  "field": "kind",
+  "value": "venue-channel",
+  "by": "person:reviewer",
+  "reason": "the Source is the Venue's own channel"
+}
+```
+
+Then record it and verify the complete log:
+
+```sh
+pnpm catalogue judge /path/to/judgement.json
+pnpm catalogue verify
+```
+
+The ingest command must succeed before anything is considered ingested. `judge` owns the
+Judgement identifier and envelope and rejects references that would violate log integrity.
+The final command verifies every record, including records written outside the CLI.
 
 Then report to the user: what was extracted, every judgement call you made, and everything the
 Document *failed* to supply. The gaps matter as much as the content.

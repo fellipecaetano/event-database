@@ -158,7 +158,7 @@ under **[Still open](#still-open)** at the end.
 
       Gathered files wait in `data/inbox/` and are moved to `data/artefacts/` on ingest, so what remains
       to be done is visible to anyone without them knowing anything. Documents record
-      `artefact_hash`, the SHA-256 of the input file's bytes. `ingest.append` refuses a
+      `artefact_hash`, the SHA-256 of the input file's bytes. `catalogue ingest` refuses a
       Document whose hash is already recorded — the only layer that holds when the other two
       are ignored. The skill's first step is to take work only from the inbox.
 
@@ -183,7 +183,7 @@ under **[Still open](#still-open)** at the end.
       A shape change lands by **re-extraction**: read the retained Artefact again, append new
       Observations, and the fold prefers them because a newer Extractor outranks an older one.
       That path exists for Observations only. A change to the Document shape is currently
-      blocked by the duplicate guard in `ingest.append`, and judgements cannot be regenerated
+      blocked by the ingest boundary's duplicate guard, and judgements cannot be regenerated
       at all. The rule therefore bites hardest on the records that are irreplaceable, which is
       the right way round, but it means those changes must be rare and deliberate.
 - [x] **The clock is an input to the Fold.** It takes `now` as an explicit parameter,
@@ -481,18 +481,19 @@ under **[Still open](#still-open)** at the end.
 
 ## H. Code and tooling
 
-- [x] **Everything is ported; the repo needs one runtime.** `ingest.py` becomes part of
+- [x] **The ingest boundary is ported; the repo converges on one runtime.** `ingest.py` becomes part of
       `packages/core` — it is not a script but the ingest boundary itself, holding id minting,
       span verification and the duplicate guard that ADR 0005 requires every caller to share.
-      `check-links.sh` and `check-glossary.py` are rewritten in TypeScript.
+      The small link and glossary checks remain in shell and Python and are queued separately.
 
-      The point is that anyone working here installs bun and nothing else. This repository is
-      worked on largely by agents, and three runtimes means knowing which one each file wants
-      before touching it. Costs rewriting about 150 lines that currently work, including accent
-      handling already debugged once.
+      The point is that production and repository tooling run on Node.js, with pnpm managing
+      the workspace. This repository is worked on largely by agents, and multiple runtimes
+      means knowing which one each file wants before touching it. Costs rewriting about 150
+      lines that currently work, including accent handling already debugged once.
 
-      Until the port happens the skill keeps pointing at the Python, since pointing it at code
-      that does not exist would break the one procedure a cold agent follows.
+      The ingest boundary is now ported and the extraction skill points at the TypeScript CLI.
+      The two documentation checks remain to be ported before Python and shell can disappear
+      from the repository entirely.
 - [x] **Schemas are authoritative for record shapes; the document keeps the reasoning.**
       Validation is `zod`. Once schemas exist, `record-shapes.md` stops being the authority on
       field lists and holds what only it can — why spans are an array, why a Source's kind moved
@@ -504,19 +505,13 @@ under **[Still open](#still-open)** at the end.
       hand-maintained descriptions of one shape is the arrangement that produced fourteen
       review findings.
 
-      Not yet in force. Until schemas exist there is nothing to point at, so the document
-      remains authoritative by default; it is restructured when the first schema lands.
-- [x] **Toolchain is bun** — runtime, package manager, workspaces and test runner in one
-      tool. Not yet installed; that is a prerequisite before any code is written.
-
-      The alternative considered was using nothing extra at all: Node 26 runs TypeScript
-      directly by stripping types and ships `node:test`, so npm workspaces plus `tsc --noEmit`
-      would have needed no dependencies whatsoever. bun was preferred for speed and for being
-      a single tool.
-
-      One thing it buys beyond that: bun transpiles rather than strips, so the erasable-syntax
-      constraint does not apply — `enum`, `namespace`, parameter properties and decorators all
-      work, where Node's stripping rejects them.
+      This is now in force. Versioned `zod` schemas in `packages/core` validate both new records
+      and every record already in the append-only log; `record-shapes.md` owns reasoning and
+      examples rather than a second field list.
+- [x] **Toolchain is Node.js with pnpm** — Node.js is the runtime, pnpm manages dependencies
+      and workspaces, TypeScript builds the packages, and Vitest runs the tests. The root
+      scripts are the shared interface for formatting, linting, typechecking, testing and
+      building the monorepo.
 - [x] **Layout is a monorepo**: `packages/core` holds the library, `apps/cli` the command
       line, and `apps/*` anything later. The convention — deployables in `apps/`, libraries in
       `packages/` — puts everything in its final place before the app exists, so nothing is
@@ -546,11 +541,6 @@ under **[Still open](#still-open)** at the end.
 ## To grill
 
 Queued topics, in no particular order. Each has something concrete already pulling at it.
-
-- [ ] **Coding guidelines.** `AGENTS.md` has one style rule, on comments. Naming, types and
-      validation, errors, tests and formatting are all marked *not yet decided*, which the file
-      is explicit means "not discussed", not "anything goes". Validation is the one with a
-      dependency already waiting: record shapes are drafted in Markdown and enforced by nothing.
 
 - [ ] **Remote, secure storage for `data/`.** The log is the product and currently exists on
       one machine plus whatever git remote there is. Three things the grill has to separate:
