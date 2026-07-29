@@ -451,6 +451,29 @@ under **[Still open](#still-open)** at the end.
       References normally require an existing compatible entity. A split is the explicit
       exception: its `same` Observation Match carries `creates_entity: true`, making the new
       identity deliberate and mechanically distinguishable from a mistyped target.
+- [x] **Working the queue interactively.** `catalogue review --interactive` walks the derived
+      queue one case at a time, so a decision needs no hand-written JSON draft. Four things are
+      settled by it.
+
+      **Blind presentation.** The case shown to the reviewer is a separate shape from the
+      machine-facing candidate, and carries no reason, score, verdict, or impact. Candidate
+      reasons are revealed only after the decision is durably on disk, and not at all if
+      persistence fails. This is review blindness made structural rather than remembered.
+
+      **Explicit merge survivor.** A `same` verdict asks which Event ID survives. A is offered
+      as the deterministic suggestion, but an empty answer is never taken as agreement, because
+      the asymmetry above means a wrong merge is the expensive error and a reflexive Return is
+      exactly how one gets recorded.
+
+      **Immediate per-case persistence.** Each case is prepared with one timestamp, verified as
+      the existing log plus the whole batch, and appended in a single write. Nothing from a
+      case survives a partial failure, and cases already decided survive an interruption. The
+      queue is then rebuilt from the log, because a merge can invalidate later candidates.
+
+      **Review time is not decision time.** `--at` pins the Fold the queue is derived from;
+      Judgements are always stamped with the real clock. Backdating a decision to a replayed
+      review would corrupt deferral suppression, which compares a deferral against the newest
+      Observation touching either side.
 
 ## F. Time details
 
