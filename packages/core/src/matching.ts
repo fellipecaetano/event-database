@@ -4,13 +4,12 @@ import {
   type ProjectedEntity,
   type ProjectedFact,
 } from "./fold.js";
+import { parseEntityReference } from "./entity-reference.js";
+import { compareJudgementPrecedence } from "./judgement-precedence.js";
 import type { LogRecord } from "./records.js";
 
 const millisecondsPerDay = 86_400_000;
 const isoDateLength = 10;
-const humanTrust = 3;
-const readerTrust = 2;
-const scorerTrust = 1;
 type MatchRecord = Extract<LogRecord, { type: "match" }>;
 type ObservationMatch = MatchRecord & {
   readonly subject: Extract<MatchRecord["subject"], { kind: "observation" }>;
@@ -186,13 +185,11 @@ function isSuppressed(
     )
     .filter((match) => {
       const subjectEvent = observationToEvent.get(match.subject.id);
-      const targetEvent = match.entity.startsWith("event:")
-        ? match.entity.slice("event:".length)
-        : undefined;
-      if (subjectEvent === undefined || targetEvent === undefined) {
+      const target = parseEntityReference(match.entity);
+      if (subjectEvent === undefined || target.kind !== "event") {
         return false;
       }
-      return samePair(candidate.eventIds, [subjectEvent, targetEvent]);
+      return samePair(candidate.eventIds, [subjectEvent, target.id]);
     })
     .toSorted(compareDecisions);
   const decision = decisions.at(-1);
@@ -227,15 +224,5 @@ function samePair(
 }
 
 function compareDecisions(left: MatchRecord, right: MatchRecord): number {
-  return (
-    actorTrust(left.by) - actorTrust(right.by) ||
-    left.at.localeCompare(right.at)
-  );
-}
-
-function actorTrust(actor: string): number {
-  if (actor.startsWith("person:")) {
-    return humanTrust;
-  }
-  return actor.startsWith("matcher") ? scorerTrust : readerTrust;
+  return compareJudgementPrecedence(left, right);
 }

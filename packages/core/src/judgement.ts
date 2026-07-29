@@ -4,12 +4,10 @@ import {
   matchSchema,
   overrideSchema,
   redirectSchema,
+  recordVersions,
   validationSchema,
   type Judgement,
 } from "./records.js";
-
-const versionOne = 1;
-const versionTwo = 2;
 
 export const judgementDraftSchema = z.discriminatedUnion("type", [
   matchSchema.omit({ id: true, at: true, v: true }),
@@ -32,13 +30,29 @@ export function prepareJudgement(
   const draft = judgementDraftSchema.parse(input);
   switch (draft.type) {
     case "match":
-      return matchSchema.parse({ ...draft, ...context, v: versionOne });
+      return matchSchema.parse({
+        ...draft,
+        ...context,
+        v: recordVersions.match,
+      });
     case "override":
-      return overrideSchema.parse({ ...draft, ...context, v: versionOne });
+      return overrideSchema.parse({
+        ...draft,
+        ...context,
+        v: recordVersions.override,
+      });
     case "redirect":
-      return redirectSchema.parse({ ...draft, ...context, v: versionOne });
+      return redirectSchema.parse({
+        ...draft,
+        ...context,
+        v: recordVersions.redirect,
+      });
     case "validation":
-      return validationSchema.parse({ ...draft, ...context, v: versionTwo });
+      return validationSchema.parse({
+        ...draft,
+        ...context,
+        v: recordVersions.validation,
+      });
   }
   throw new Error("unsupported Judgement draft");
 }

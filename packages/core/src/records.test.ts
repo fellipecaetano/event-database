@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { logRecordSchema } from "./index.js";
+import { logRecordSchema, recordVersions } from "./index.js";
+
+describe("recordVersions", () => {
+  it("publishes the versions used by record builders", () => {
+    expect(recordVersions).toEqual({
+      document: { legacy: 1, current: 2 },
+      observation: 1,
+      match: 1,
+      override: 1,
+      validation: 2,
+      redirect: 1,
+    });
+  });
+});
 
 describe("logRecordSchema", () => {
   it("accepts a version 1 Document from the existing log", () => {

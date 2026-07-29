@@ -11,12 +11,34 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { Document } from "@event-database/core";
+
 import { runCli } from "./main.js";
 
 const temporaryDirectories: string[] = [];
 const documentId = "019fa69b-63ea-778a-adbf-9660b7ea94a6";
 const observationId = "019fa69b-63ea-778b-8ea7-232f8cbde22a";
 const digest = "a".repeat(64);
+const at = "2026-07-27T22:55:00Z";
+
+function validDocument(
+  overrides: Partial<Extract<Document, { v: 1 }>> = {},
+): Extract<Document, { v: 1 }> {
+  return {
+    type: "document",
+    id: documentId,
+    at,
+    v: 1,
+    source: "source",
+    retrieved_at: at,
+    text_source: "retrieved",
+    artefact: "data/artefacts/post.txt",
+    text_hash: digest,
+    artefact_hash: digest,
+    text: "Show",
+    ...overrides,
+  };
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -43,19 +65,9 @@ describe("verify command", () => {
   it("reports a valid log and exits successfully", async () => {
     const artefactHash =
       "3b9c358f36f0a31b6ad3e14f309c7cf198ac9246e8316f9ce543d5b19ac02b80";
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "source",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/post.txt",
-      text_hash: digest,
-      artefact_hash: artefactHash,
-      text: "Show",
-    });
+    const root = await makeRepository(
+      validDocument({ artefact_hash: artefactHash }),
+    );
     await mkdir(join(root, "data", "artefacts"));
     await writeFile(join(root, "data", "artefacts", "post.txt"), "file");
     const output: string[] = [];
@@ -85,19 +97,13 @@ describe("verify command", () => {
 
 describe("ingest command", () => {
   it("retains an inbox Artefact and appends validated records", async () => {
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "existing",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/existing.txt",
-      text_hash: digest,
-      artefact_hash: digest,
-      text: "Existing",
-    });
+    const root = await makeRepository(
+      validDocument({
+        source: "existing",
+        artefact: "data/artefacts/existing.txt",
+        text: "Existing",
+      }),
+    );
     const inbox = join(root, "data", "inbox");
     await mkdir(inbox);
     const artefact = join(inbox, "post.txt");
@@ -156,20 +162,15 @@ describe("ingest command", () => {
   });
 
   it("refuses an Artefact whose bytes are already recorded", async () => {
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "existing",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/existing.txt",
-      text_hash: digest,
-      artefact_hash:
-        "0967115f2813a3541eaef77de9d9d5773f1c0c04314b0bbfe4ff3b3b1c55b5d5",
-      text: "Existing",
-    });
+    const root = await makeRepository(
+      validDocument({
+        source: "existing",
+        artefact: "data/artefacts/existing.txt",
+        artefact_hash:
+          "0967115f2813a3541eaef77de9d9d5773f1c0c04314b0bbfe4ff3b3b1c55b5d5",
+        text: "Existing",
+      }),
+    );
     const inbox = join(root, "data", "inbox");
     await mkdir(inbox);
     const artefact = join(inbox, "post.txt");
@@ -191,19 +192,13 @@ describe("ingest command", () => {
   });
 
   it("does not overwrite an existing Artefact with the same filename", async () => {
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "existing",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/existing.txt",
-      text_hash: digest,
-      artefact_hash: digest,
-      text: "Existing",
-    });
+    const root = await makeRepository(
+      validDocument({
+        source: "existing",
+        artefact: "data/artefacts/existing.txt",
+        text: "Existing",
+      }),
+    );
     const inbox = join(root, "data", "inbox");
     const artefacts = join(root, "data", "artefacts");
     await mkdir(inbox);
@@ -243,19 +238,13 @@ describe("ingest command", () => {
   });
 
   it("rejects an unregistered Extractor before moving the Artefact", async () => {
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "existing",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/existing.txt",
-      text_hash: digest,
-      artefact_hash: digest,
-      text: "Existing",
-    });
+    const root = await makeRepository(
+      validDocument({
+        source: "existing",
+        artefact: "data/artefacts/existing.txt",
+        text: "Existing",
+      }),
+    );
     const inbox = join(root, "data", "inbox");
     await mkdir(inbox);
     const artefact = join(inbox, "post.txt");
@@ -292,22 +281,10 @@ describe("ingest command", () => {
 
 describe("review command", () => {
   it("uses the CLI clock when no timestamp is supplied", async () => {
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "source",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/post.txt",
-      text_hash: digest,
-      artefact_hash: digest,
-      text: "event",
-    });
+    const root = await makeRepository(validDocument({ text: "event" }));
     const output: string[] = [];
 
-    const exitCode = await runCli(["review", root], {
+    const exitCode = await runCli(["review", "--repository", root], {
       writeOut: (message) => output.push(message),
       writeError: () => undefined,
       now: () => Date.parse("2026-07-28T12:00:00Z"),
@@ -318,19 +295,13 @@ describe("review command", () => {
   });
 
   it("renders the derived matching queue for a pinned clock", async () => {
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "source-a",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/a.txt",
-      text_hash: digest,
-      artefact_hash: digest,
-      text: "event",
-    });
+    const root = await makeRepository(
+      validDocument({
+        source: "source-a",
+        artefact: "data/artefacts/a.txt",
+        text: "event",
+      }),
+    );
     const secondDocumentId = "019fa69b-63ea-778b-953f-6f7a5bb62657";
     const firstObservationId = "019fa69b-63ea-778c-964c-a63e474676a5";
     const secondObservationId = "019fa69b-63ea-778d-964c-a63e474676a5";
@@ -338,19 +309,18 @@ describe("review command", () => {
     const secondEventId = "019fa69b-63ea-778f-b0f1-8eb3f339794f";
     await writeFile(
       join(root, "data", "documents", "2026-08.jsonl"),
-      `${JSON.stringify({
-        type: "document",
-        id: secondDocumentId,
-        at: "2026-07-27T23:00:00Z",
-        v: 1,
-        source: "source-b",
-        retrieved_at: "2026-07-27T23:00:00Z",
-        text_source: "retrieved",
-        artefact: "data/artefacts/b.txt",
-        text_hash: "b".repeat(64),
-        artefact_hash: "b".repeat(64),
-        text: "event",
-      })}\n`,
+      `${JSON.stringify(
+        validDocument({
+          id: secondDocumentId,
+          at: "2026-07-27T23:00:00Z",
+          source: "source-b",
+          retrieved_at: "2026-07-27T23:00:00Z",
+          artefact: "data/artefacts/b.txt",
+          text_hash: "b".repeat(64),
+          artefact_hash: "b".repeat(64),
+          text: "event",
+        }),
+      )}\n`,
     );
     await writeFile(
       join(root, "data", "observations", "2026-07.jsonl"),
@@ -393,34 +363,69 @@ describe("review command", () => {
     );
     const output: string[] = [];
 
-    const exitCode = await runCli(["review", "2026-07-28T12:00:00Z", root], {
-      writeOut: (message) => output.push(message),
-      writeError: () => undefined,
-    });
+    const exitCode = await runCli(
+      ["review", "--at", "2026-07-28T12:00:00Z", "--repository", root],
+      {
+        writeOut: (message) => output.push(message),
+        writeError: () => undefined,
+      },
+    );
 
     expect(exitCode).toBe(0);
     expect(output).toHaveLength(1);
     expect(output[0]).toContain(firstEventId);
     expect(output[0]).toContain(secondEventId);
   });
+
+  it("rejects ambiguous positional arguments", async () => {
+    const errors: string[] = [];
+
+    const exitCode = await runCli(["review", "2026-07-28T12:00:00Z"], {
+      writeOut: () => undefined,
+      writeError: (message) => errors.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(errors).toEqual([
+      "Usage: event-database review [--at <timestamp>] [--repository <path>]",
+    ]);
+  });
+
+  it.each([
+    {
+      name: "a missing option value",
+      arguments: ["review", "--at"],
+      error:
+        "Usage: event-database review [--at <timestamp>] [--repository <path>]",
+    },
+    {
+      name: "an invalid timestamp",
+      arguments: ["review", "--at", "not-a-timestamp"],
+      error: "invalid review timestamp: not-a-timestamp",
+    },
+  ])("rejects $name", async ({ arguments: arguments_, error }) => {
+    const errors: string[] = [];
+
+    const exitCode = await runCli(arguments_, {
+      writeOut: () => undefined,
+      writeError: (message) => errors.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(errors).toEqual([error]);
+  });
 });
 
 describe("pending command", () => {
   it("lists only inbox Artefacts whose bytes are not in the log", async () => {
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "source",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/existing.txt",
-      text_hash: digest,
-      artefact_hash:
-        "0967115f2813a3541eaef77de9d9d5773f1c0c04314b0bbfe4ff3b3b1c55b5d5",
-      text: "Existing",
-    });
+    const root = await makeRepository(
+      validDocument({
+        artefact: "data/artefacts/existing.txt",
+        artefact_hash:
+          "0967115f2813a3541eaef77de9d9d5773f1c0c04314b0bbfe4ff3b3b1c55b5d5",
+        text: "Existing",
+      }),
+    );
     const inbox = join(root, "data", "inbox");
     await mkdir(inbox);
     await writeFile(join(inbox, "seen.txt"), "same");
@@ -439,19 +444,7 @@ describe("pending command", () => {
 
 describe("judge command", () => {
   it("mints and appends a validated Judgement", async () => {
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "source",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/post.txt",
-      text_hash: digest,
-      artefact_hash: digest,
-      text: "Show",
-    });
+    const root = await makeRepository(validDocument());
     const draftPath = join(root, "judgement.json");
     await writeFile(
       draftPath,
@@ -481,19 +474,7 @@ describe("judge command", () => {
   });
 
   it("rejects a Judgement that would violate log integrity", async () => {
-    const root = await makeRepository({
-      type: "document",
-      id: documentId,
-      at: "2026-07-27T22:55:00Z",
-      v: 1,
-      source: "source",
-      retrieved_at: "2026-07-27T22:55:00Z",
-      text_source: "retrieved",
-      artefact: "data/artefacts/post.txt",
-      text_hash: digest,
-      artefact_hash: digest,
-      text: "Show",
-    });
+    const root = await makeRepository(validDocument());
     const draftPath = join(root, "judgement.json");
     await writeFile(
       draftPath,

@@ -31,15 +31,16 @@ pnpm catalogue pending
 pnpm catalogue ingest /path/to/draft.json data/inbox/source-file
 pnpm catalogue judge /path/to/judgement.json
 pnpm catalogue review
-pnpm catalogue review 2026-07-28T12:00:00Z
+pnpm catalogue review --at 2026-07-28T12:00:00Z
+pnpm catalogue review --repository /path/to/repository
 pnpm catalogue verify
 ```
 
 `ingest` validates a draft, mints record identifiers, hashes and retains the Artefact, and
 appends the Document and Observations. `judge` appends validated Matches, Overrides,
 Validations, or Redirects. `verify` validates the entire log and retained Artefact hashes.
-`review` uses the current clock by default; pass an ISO timestamp to make its output
-reproducible.
+`review` uses the current clock and repository by default; use `--at` for reproducible
+output and `--repository` to read another checkout.
 
 For the structured ingestion procedure, read
 [the extraction skill](./skills/extract-document/SKILL.md).

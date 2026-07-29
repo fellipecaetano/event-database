@@ -6,33 +6,42 @@ import {
   claimSchema,
   documentV2Schema,
   observationSchema,
+  recordVersions,
   type Document,
+  type LogRecord,
   type Observation,
 } from "./records.js";
 
-const timestampByteCount = 6;
-const uuidByteCount = 16;
-const counterMaximum = 0xfff;
-const versionSeven = 0x70;
-const variantMask = 0x3f;
-const variantBits = 0x80;
-const byteMask = 0xff;
-const byteRadix = 0x100;
-const counterRandomByteCount = 2;
-const nibbleBitCount = 4;
-const counterHighByteIndex = 6;
-const counterLowByteIndex = 7;
-const variantByteIndex = 8;
-const counterHighBitShift = 8;
-const hexRadix = 16;
-const paddedHexLength = 2;
-const firstSegmentEnd = 8;
-const secondSegmentEnd = 12;
-const thirdSegmentEnd = 16;
-const fourthSegmentEnd = 20;
-const documentVersion = 2;
-const observationVersion = 1;
-
+const uuidV7Layout = {
+  byteCount: 16,
+  timestampBytes: 6,
+  versionBits: 0x70,
+  counter: {
+    maximum: 0xfff,
+    randomBytes: 2,
+    highByte: 6,
+    lowByte: 7,
+    highBitShift: 8,
+  },
+  variant: {
+    byte: 8,
+    mask: 0x3f,
+    bits: 0x80,
+  },
+} as const;
+const byteEncoding = {
+  mask: 0xff,
+  radix: 0x100,
+  nibbleBits: 4,
+} as const;
+const uuidTextLayout = {
+  radix: 16,
+  paddedByteLength: 2,
+  firstSegmentEnd: 8,
+  secondSegmentEnd: 12,
+  thirdSegmentEnd: 16,
+  fourthSegmentEnd: 20,
+} as const;
 interface UuidV7Dependencies {
   readonly now: () => number;
   readonly randomBytes: (length: number) => Uint8Array;
@@ -48,33 +57,34 @@ export function createUuidV7Generator({
   return () => {
     const millisecond = Math.floor(now());
     if (millisecond === lastMillisecond) {
-      if (counter === counterMaximum) {
+      if (counter === uuidV7Layout.counter.maximum) {
         throw new Error("UUIDv7 counter exhausted within one millisecond");
       }
       counter += 1;
     } else {
-      const randomCounter = randomBytes(counterRandomByteCount);
+      const randomCounter = randomBytes(uuidV7Layout.counter.randomBytes);
       counter =
-        ((randomCounter[0] ?? 0) << nibbleBitCount) |
-        ((randomCounter[1] ?? 0) >> nibbleBitCount);
+        ((randomCounter[0] ?? 0) << byteEncoding.nibbleBits) |
+        ((randomCounter[1] ?? 0) >> byteEncoding.nibbleBits);
       lastMillisecond = millisecond;
     }
 
-    const bytes = randomBytes(uuidByteCount);
-    if (bytes.length !== uuidByteCount) {
+    const bytes = randomBytes(uuidV7Layout.byteCount);
+    if (bytes.length !== uuidV7Layout.byteCount) {
       throw new Error("randomBytes returned an invalid byte count");
     }
 
     let timestamp = millisecond;
-    for (let index = timestampByteCount - 1; index >= 0; index -= 1) {
-      bytes[index] = timestamp & byteMask;
-      timestamp = Math.floor(timestamp / byteRadix);
+    for (let index = uuidV7Layout.timestampBytes - 1; index >= 0; index -= 1) {
+      bytes[index] = timestamp & byteEncoding.mask;
+      timestamp = Math.floor(timestamp / byteEncoding.radix);
     }
-    bytes[counterHighByteIndex] =
-      versionSeven | (counter >> counterHighBitShift);
-    bytes[counterLowByteIndex] = counter & byteMask;
-    bytes[variantByteIndex] =
-      ((bytes[variantByteIndex] ?? 0) & variantMask) | variantBits;
+    bytes[uuidV7Layout.counter.highByte] =
+      uuidV7Layout.versionBits | (counter >> uuidV7Layout.counter.highBitShift);
+    bytes[uuidV7Layout.counter.lowByte] = counter & byteEncoding.mask;
+    bytes[uuidV7Layout.variant.byte] =
+      ((bytes[uuidV7Layout.variant.byte] ?? 0) & uuidV7Layout.variant.mask) |
+      uuidV7Layout.variant.bits;
 
     return formatUuid(bytes);
   };
@@ -82,14 +92,18 @@ export function createUuidV7Generator({
 
 function formatUuid(bytes: Uint8Array): string {
   const hex = [...bytes]
-    .map((byte) => byte.toString(hexRadix).padStart(paddedHexLength, "0"))
+    .map((byte) =>
+      byte
+        .toString(uuidTextLayout.radix)
+        .padStart(uuidTextLayout.paddedByteLength, "0"),
+    )
     .join("");
   return [
-    hex.slice(0, firstSegmentEnd),
-    hex.slice(firstSegmentEnd, secondSegmentEnd),
-    hex.slice(secondSegmentEnd, thirdSegmentEnd),
-    hex.slice(thirdSegmentEnd, fourthSegmentEnd),
-    hex.slice(fourthSegmentEnd),
+    hex.slice(0, uuidTextLayout.firstSegmentEnd),
+    hex.slice(uuidTextLayout.firstSegmentEnd, uuidTextLayout.secondSegmentEnd),
+    hex.slice(uuidTextLayout.secondSegmentEnd, uuidTextLayout.thirdSegmentEnd),
+    hex.slice(uuidTextLayout.thirdSegmentEnd, uuidTextLayout.fourthSegmentEnd),
+    hex.slice(uuidTextLayout.fourthSegmentEnd),
   ].join("-");
 }
 
@@ -134,25 +148,45 @@ interface PrepareIngestContext {
   readonly at: string;
   readonly artefact: string;
   readonly artefactHash: string;
+  readonly existingRecords: readonly LogRecord[];
+  readonly extractorTrust: Readonly<Record<string, number>>;
   readonly nextId: () => string;
 }
 
 interface PreparedIngest {
-  readonly document: Extract<Document, { v: typeof documentVersion }>;
+  readonly document: Extract<
+    Document,
+    { v: typeof recordVersions.document.current }
+  >;
   readonly observations: Observation[];
 }
 
 export function prepareIngest(
-  input: IngestDraft,
+  input: unknown,
   context: PrepareIngestContext,
 ): PreparedIngest {
+  const existingDocument = context.existingRecords.find(
+    (record): record is Document =>
+      record.type === "document" &&
+      record.artefact_hash === context.artefactHash,
+  );
+  if (existingDocument !== undefined) {
+    throw new Error(
+      `refusing to ingest: that Artefact is already Document ${existingDocument.id}`,
+    );
+  }
+
   const draft = ingestDraftSchema.parse(input);
+  if (!Object.hasOwn(context.extractorTrust, draft.extractor)) {
+    throw new Error(`unknown Extractor ${draft.extractor}`);
+  }
+
   const documentId = context.nextId();
   const document = documentV2Schema.parse({
     type: "document",
     id: documentId,
     at: context.at,
-    v: documentVersion,
+    v: recordVersions.document.current,
     ...draft.document,
     artefact: context.artefact,
     artefact_hash: context.artefactHash,
@@ -166,7 +200,7 @@ export function prepareIngest(
       type: "observation",
       id: context.nextId(),
       at: context.at,
-      v: observationVersion,
+      v: recordVersions.observation,
       document: documentId,
       extractor: draft.extractor,
       subject: {
@@ -184,7 +218,7 @@ export function prepareIngest(
 }
 
 function verifyMetadataSpans(
-  document: Extract<Document, { v: typeof documentVersion }>,
+  document: Extract<Document, { v: typeof recordVersions.document.current }>,
 ): void {
   for (const metadata of [
     document.source,

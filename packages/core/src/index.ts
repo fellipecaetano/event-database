@@ -8,9 +8,18 @@ export {
   matchSchema,
   observationSchema,
   overrideSchema,
+  recordVersions,
   redirectSchema,
   validationSchema,
 } from "./records.js";
+export {
+  entityReferenceSchema,
+  formatEntityReference,
+  parseEntityReference,
+  uuidV7Schema,
+} from "./entity-reference.js";
+export type { EntityKind, ParsedEntityReference } from "./entity-reference.js";
+export { compareJudgementPrecedence } from "./judgement-precedence.js";
 export type {
   Claim,
   Document,

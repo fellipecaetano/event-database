@@ -17,14 +17,12 @@ import {
   buildReviewQueue,
   createUuidV7Generator,
   hashBytes,
-  ingestDraftSchema,
   judgementDraftSchema,
   parseJsonLines,
   prepareIngest,
   prepareJudgement,
   verifyLog,
   type Document,
-  type IngestDraft,
   type JudgementDraft,
   type FoldRules,
   type LogRecord,
@@ -48,7 +46,6 @@ const defaultDependencies: CliDependencies = {
   randomBytes: (length) => randomBytes(length),
 };
 
-const knownExtractors = new Set(["claude-opus-5/manual@draft", "tsv-parser@1"]);
 const foldRules: FoldRules = {
   version: "working-tree",
   extractorTrust: {
@@ -56,8 +53,12 @@ const foldRules: FoldRules = {
     "tsv-parser@1": 2,
   },
 };
+const knownExtractors = new Set(Object.keys(foldRules.extractorTrust));
 const yearMonthLength = 7;
 const executableArgumentCount = 2;
+const reviewOptionArgumentCount = 2;
+const reviewUsage =
+  "Usage: event-database review [--at <timestamp>] [--repository <path>]";
 
 export async function runCli(
   arguments_: readonly string[],
@@ -176,16 +177,27 @@ async function runReview(
   arguments_: readonly string[],
   dependencies: CliDependencies,
 ): Promise<number> {
-  const [firstArgument, secondArgument] = arguments_;
   let now = new Date(dependencies.now());
   let root = process.cwd();
-  if (firstArgument !== undefined) {
-    const suppliedClock = new Date(firstArgument);
-    if (Number.isNaN(suppliedClock.valueOf())) {
-      root = firstArgument;
+  for (
+    let index = 0;
+    index < arguments_.length;
+    index += reviewOptionArgumentCount
+  ) {
+    const option = arguments_[index];
+    const value = arguments_[index + 1];
+    if (value === undefined) {
+      throw new Error(reviewUsage);
+    }
+    if (option === "--at") {
+      now = new Date(value);
+      if (Number.isNaN(now.valueOf())) {
+        throw new Error(`invalid review timestamp: ${value}`);
+      }
+    } else if (option === "--repository") {
+      root = value;
     } else {
-      now = suppliedClock;
-      root = secondArgument ?? root;
+      throw new Error(reviewUsage);
     }
   }
 
@@ -268,15 +280,6 @@ async function runIngest(
   const artefactBytes = await readFile(artefactPath);
   const artefactHash = hashBytes(artefactBytes);
   const existingRecords = await readLog(root);
-  const existingDocument = existingRecords.find(
-    (record): record is Document =>
-      record.type === "document" && record.artefact_hash === artefactHash,
-  );
-  if (existingDocument !== undefined) {
-    throw new Error(
-      `refusing to ingest: that Artefact is already Document ${existingDocument.id}`,
-    );
-  }
 
   const draftText = await readFile(draftPath, "utf8");
   let draftValue: unknown;
@@ -287,17 +290,15 @@ async function runIngest(
       cause: error,
     });
   }
-  const draft: IngestDraft = ingestDraftSchema.parse(draftValue);
-  if (!knownExtractors.has(draft.extractor)) {
-    throw new Error(`unknown Extractor ${draft.extractor}`);
-  }
   const at = new Date(dependencies.now()).toISOString();
   const destination = join(root, "data", "artefacts", basename(artefactPath));
   await assertPathAbsent(destination);
-  const prepared = prepareIngest(draft, {
+  const prepared = prepareIngest(draftValue, {
     at,
     artefact: relative(root, destination),
     artefactHash,
+    existingRecords,
+    extractorTrust: foldRules.extractorTrust,
     nextId: createUuidV7Generator({
       now: dependencies.now,
       randomBytes: dependencies.randomBytes,

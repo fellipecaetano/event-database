@@ -4,6 +4,7 @@ import {
   createUuidV7Generator,
   hashBytes,
   hashText,
+  logRecordSchema,
   prepareIngest,
   type IngestDraft,
 } from "./index.js";
@@ -76,6 +77,8 @@ describe("prepareIngest", () => {
       at,
       artefact: "data/artefacts/post.html",
       artefactHash: digest,
+      existingRecords: [],
+      extractorTrust: { "extractor@1": 1 },
       nextId: () => {
         const id = ids.shift();
         if (id === undefined) {
@@ -125,8 +128,50 @@ describe("prepareIngest", () => {
         at,
         artefact: "data/artefacts/post.html",
         artefactHash: digest,
+        existingRecords: [],
+        extractorTrust: { "extractor@1": 1 },
         nextId: () => firstId,
       }),
     ).toThrow(/ungrounded span/u);
+  });
+
+  it("rejects an Artefact whose bytes are already recorded", () => {
+    const existingDocument = logRecordSchema.parse({
+      type: "document",
+      id: firstId,
+      at,
+      v: 1,
+      source: "source",
+      retrieved_at: at,
+      text_source: "retrieved",
+      artefact: "data/artefacts/existing.html",
+      artefact_hash: digest,
+      text_hash: digest,
+      text: "Existing",
+    });
+
+    expect(() =>
+      prepareIngest(draft, {
+        at,
+        artefact: "data/artefacts/post.html",
+        artefactHash: digest,
+        existingRecords: [existingDocument],
+        extractorTrust: { "extractor@1": 1 },
+        nextId: () => secondId,
+      }),
+    ).toThrow(`already Document ${firstId}`);
+  });
+
+  it("rejects an unregistered Extractor", () => {
+    expect(() =>
+      prepareIngest(draft, {
+        at,
+        artefact: "data/artefacts/post.html",
+        artefactHash: digest,
+        existingRecords: [],
+        extractorTrust: {},
+        nextId: () => firstId,
+      }),
+    ).toThrow("unknown Extractor extractor@1");
   });
 });

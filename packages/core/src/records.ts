@@ -1,15 +1,16 @@
 import { z } from "zod";
 
-const currencyCodeLength = 3;
-const versionOne = 1;
-const versionTwo = 2;
+import { entityReferenceSchema, uuidV7Schema } from "./entity-reference.js";
 
-const uuidV7Schema = z
-  .string()
-  .regex(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    "expected a UUIDv7",
-  );
+const currencyCodeLength = 3;
+export const recordVersions = {
+  document: { legacy: 1, current: 2 },
+  observation: 1,
+  match: 1,
+  override: 1,
+  validation: 2,
+  redirect: 1,
+} as const;
 
 const sha256Schema = z
   .string()
@@ -66,7 +67,7 @@ const documentBase = {
 export const documentV1Schema = z
   .object({
     ...documentBase,
-    v: z.literal(versionOne),
+    v: z.literal(recordVersions.document.legacy),
     source: z.string().min(1),
     origin: z.string().min(1).optional(),
     published_at: z.string().min(1).optional(),
@@ -76,7 +77,7 @@ export const documentV1Schema = z
 export const documentV2Schema = z
   .object({
     ...documentBase,
-    v: z.literal(versionTwo),
+    v: z.literal(recordVersions.document.current),
     source: groundedMetadataSchema,
     origin: groundedMetadataSchema.optional(),
     published_at: groundedMetadataSchema.optional(),
@@ -120,7 +121,7 @@ const observationBase = {
   type: z.literal("observation"),
   id: uuidV7Schema,
   at: appendedAtSchema,
-  v: z.literal(versionOne),
+  v: z.literal(recordVersions.observation),
   document: uuidV7Schema,
   extractor: z.string().min(1),
   supersedes: uuidV7Schema.optional(),
@@ -148,13 +149,6 @@ export const observationSchema = z.union([
   venueObservationSchema,
 ]);
 
-const typedEntityReferenceSchema = z
-  .string()
-  .regex(
-    /^(event|venue):[0-9a-f-]+$|^source:[a-z0-9][a-z0-9._/-]*$/i,
-    "expected a typed entity reference",
-  );
-
 const judgementBase = {
   id: uuidV7Schema,
   at: appendedAtSchema,
@@ -164,14 +158,14 @@ export const matchSchema = z
   .object({
     ...judgementBase,
     type: z.literal("match"),
-    v: z.literal(versionOne),
+    v: z.literal(recordVersions.match),
     subject: z.union([
       z.object({ kind: z.literal("observation"), id: uuidV7Schema }).strict(),
       z
         .object({ kind: z.literal("venue-name"), value: z.string().min(1) })
         .strict(),
     ]),
-    entity: typedEntityReferenceSchema,
+    entity: entityReferenceSchema,
     verdict: z.enum(["same", "different", "deferred"]),
     by: z.string().min(1),
     score: z.number().min(0).max(1).optional(),
@@ -184,8 +178,8 @@ export const overrideSchema = z
   .object({
     ...judgementBase,
     type: z.literal("override"),
-    v: z.literal(versionOne),
-    entity: typedEntityReferenceSchema,
+    v: z.literal(recordVersions.override),
+    entity: entityReferenceSchema,
     field: z.string().min(1),
     value: jsonValueSchema,
     rules: z.string().min(1).optional(),
@@ -198,7 +192,7 @@ export const validationSchema = z
   .object({
     ...judgementBase,
     type: z.literal("validation"),
-    v: z.literal(versionTwo),
+    v: z.literal(recordVersions.validation),
     target: z.union([
       z
         .object({
@@ -209,7 +203,7 @@ export const validationSchema = z
       z
         .object({
           kind: z.literal("fact"),
-          entity: typedEntityReferenceSchema,
+          entity: entityReferenceSchema,
           field: z.string().min(1),
         })
         .strict(),
@@ -225,9 +219,9 @@ export const redirectSchema = z
   .object({
     ...judgementBase,
     type: z.literal("redirect"),
-    v: z.literal(versionOne),
-    from: typedEntityReferenceSchema,
-    to: typedEntityReferenceSchema,
+    v: z.literal(recordVersions.redirect),
+    from: entityReferenceSchema,
+    to: entityReferenceSchema,
     reason: z.string().min(1),
   })
   .strict();

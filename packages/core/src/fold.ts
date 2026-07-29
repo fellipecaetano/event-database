@@ -5,10 +5,11 @@ import type {
   LogRecord,
   Observation,
 } from "./records.js";
-
-const humanTrust = 3;
-const readerTrust = 2;
-const scorerTrust = 1;
+import {
+  formatEntityReference,
+  parseEntityReference,
+} from "./entity-reference.js";
+import { compareJudgementPrecedence } from "./judgement-precedence.js";
 
 export interface FoldRules {
   readonly version: string;
@@ -71,7 +72,7 @@ export function fold(
 
   for (const observation of observations) {
     const matchedEntity = matches.get(observation.id);
-    const intrinsicEntity = `${observation.subject.kind}:${observation.subject.id}`;
+    const intrinsicEntity = formatEntityReference(observation.subject);
     const entity = resolveRedirect(matchedEntity ?? intrinsicEntity, redirects);
     const group = groups.get(entity) ?? [];
     group.push(observation);
@@ -81,9 +82,7 @@ export function fold(
   const events: ProjectedEntity[] = [];
   const venues: ProjectedEntity[] = [];
   for (const [entity, groupedObservations] of groups) {
-    const separator = entity.indexOf(":");
-    const kind = entity.slice(0, separator);
-    const id = entity.slice(separator + 1);
+    const { kind, id } = parseEntityReference(entity);
     const selectedObservations = selectReadings(groupedObservations, rules);
     const facts = resolveFacts(
       entity,
@@ -179,20 +178,7 @@ function compareMatches(
   left: Extract<LogRecord, { type: "match" }>,
   right: Extract<LogRecord, { type: "match" }>,
 ): number {
-  return (
-    judgementTrust(left.by) - judgementTrust(right.by) ||
-    left.at.localeCompare(right.at)
-  );
-}
-
-function judgementTrust(actor: string): number {
-  if (actor.startsWith("person:")) {
-    return humanTrust;
-  }
-  if (actor.startsWith("matcher")) {
-    return scorerTrust;
-  }
-  return readerTrust;
+  return compareJudgementPrecedence(left, right);
 }
 
 function selectReadings(
