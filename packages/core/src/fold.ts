@@ -219,7 +219,13 @@ function compareMatches(
   return compareJudgementPrecedence(left, right);
 }
 
-function selectReadings(
+/**
+ * Narrows a group of Observations to the most-trusted, most-recent reading
+ * per supersession lineage — the same collapse the Fold applies before
+ * resolving facts, so callers outside `fold` don't re-derive it and risk
+ * presenting a superseded reading as if it were still live.
+ */
+export function selectReadings(
   observations: readonly Observation[],
   allObservations: ReadonlyMap<string, Observation>,
   rules: FoldRules,

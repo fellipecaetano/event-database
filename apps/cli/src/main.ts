@@ -12,25 +12,40 @@ import {
   unlink,
 } from "node:fs/promises";
 import { basename, isAbsolute, join, relative } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 
 import {
   LogParseError,
+  buildReviewCase,
   buildReviewQueue,
   createUuidV7Generator,
+  documentSourceName,
   hashBytes,
   judgementDraftSchema,
   parseJsonLines,
   prepareIngest,
   prepareJudgement,
   prepareReextraction,
+  prepareReviewDecision,
+  reviewCaseDocuments,
   sourceTrustProfiles,
   verifyLog,
   type Document,
   type JudgementDraft,
   type FoldRules,
   type LogRecord,
+  type ReviewCandidate,
+  type ReviewCase,
+  type ReviewSide,
 } from "@event-database/core";
+
+export interface TerminalIo {
+  readonly isInteractive: boolean;
+  /** Resolves to the typed line, or `undefined` on EOF. */
+  readonly question: (prompt: string) => Promise<string | undefined>;
+  readonly close: () => void | Promise<void>;
+}
 
 interface CliDependencies {
   readonly writeOut: (message: string) => void;
@@ -38,6 +53,7 @@ interface CliDependencies {
   readonly now: () => number;
   readonly randomBytes: (length: number) => Uint8Array;
   readonly appendFile: (path: string, data: string) => Promise<void>;
+  readonly createTerminal: () => TerminalIo;
 }
 
 const defaultDependencies: CliDependencies = {
@@ -50,6 +66,33 @@ const defaultDependencies: CliDependencies = {
   now: Date.now,
   randomBytes: (length) => randomBytes(length),
   appendFile: async (path, data) => appendFile(path, data, "utf8"),
+  createTerminal: () => {
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    // One "close" listener for the terminal's whole lifetime. Registering a
+    // fresh one per question() would leak a listener every prompt and, over
+    // a real multi-case session, trip Node's MaxListenersExceededWarning.
+    const closed = new Promise<undefined>((resolve) => {
+      rl.once("close", () => {
+        resolve(undefined);
+      });
+    });
+    return {
+      isInteractive: process.stdin.isTTY && process.stdout.isTTY,
+      question: async (prompt) => {
+        try {
+          return await Promise.race([rl.question(prompt), closed]);
+        } catch {
+          return undefined;
+        }
+      },
+      close: () => {
+        rl.close();
+      },
+    };
+  },
 };
 
 const foldRules: FoldRules = {
@@ -66,7 +109,7 @@ const yearMonthLength = 7;
 const executableArgumentCount = 2;
 const reviewOptionArgumentCount = 2;
 const reviewUsage =
-  "Usage: event-database review [--at <timestamp>] [--repository <path>]";
+  "Usage: event-database review [--interactive] [--by person:<id>] [--at <timestamp>] [--repository <path>]";
 
 export async function runCli(
   arguments_: readonly string[],
@@ -245,12 +288,17 @@ async function runReview(
 ): Promise<number> {
   let now = new Date(dependencies.now());
   let root = process.cwd();
-  for (
-    let index = 0;
-    index < arguments_.length;
-    index += reviewOptionArgumentCount
-  ) {
+  let interactive = false;
+  let by: string | undefined;
+
+  let index = 0;
+  while (index < arguments_.length) {
     const option = arguments_[index];
+    if (option === "--interactive") {
+      interactive = true;
+      index += 1;
+      continue;
+    }
     const value = arguments_[index + 1];
     if (value === undefined) {
       throw new Error(reviewUsage);
@@ -262,9 +310,27 @@ async function runReview(
       }
     } else if (option === "--repository") {
       root = value;
+    } else if (option === "--by") {
+      by = value;
     } else {
       throw new Error(reviewUsage);
     }
+    index += reviewOptionArgumentCount;
+  }
+
+  if (by !== undefined) {
+    if (!interactive) {
+      throw new Error("--by is only valid together with --interactive");
+    }
+    if (!isPersonReviewer(by)) {
+      throw new Error(
+        `--by must name a person:<id> reviewer, received "${by}"`,
+      );
+    }
+  }
+
+  if (interactive) {
+    return runInteractiveReview(dependencies, root, now, by);
   }
 
   const records = await readLog(root);
@@ -278,6 +344,310 @@ async function runReview(
     JSON.stringify(buildReviewQueue(records, { now, rules: foldRules })),
   );
   return 0;
+}
+
+function isPersonReviewer(value: string): boolean {
+  const personPrefix = "person:";
+  return value.startsWith(personPrefix) && value.length > personPrefix.length;
+}
+
+const reviewControls =
+  "[s]ame  [d]ifferent  de[f]er  s[k]ip  [v]iew sources  [q]uit";
+
+type ReviewVerdict = "same" | "different" | "deferred";
+
+/** Everything gathered from the reviewer for one case, ready to persist. */
+interface CompletedDecision {
+  readonly verdict: ReviewVerdict;
+  readonly reason?: string;
+  readonly survivingEventId?: string;
+}
+
+/** `undefined` marks EOF: stop the session without recording anything more. */
+type DecisionOutcome = CompletedDecision | "quit" | "skip" | undefined;
+
+interface SessionCounts {
+  same: number;
+  different: number;
+  deferred: number;
+  skipped: number;
+}
+
+function summaryLine(counts: SessionCounts): string {
+  return `same ${String(counts.same)} different ${String(counts.different)} deferred ${String(counts.deferred)} skipped ${String(counts.skipped)}`;
+}
+
+async function runInteractiveReview(
+  dependencies: CliDependencies,
+  root: string,
+  queueNow: Date,
+  initialBy: string | undefined,
+): Promise<number> {
+  const terminal = dependencies.createTerminal();
+  const counts: SessionCounts = {
+    same: 0,
+    different: 0,
+    deferred: 0,
+    skipped: 0,
+  };
+  try {
+    if (!terminal.isInteractive) {
+      throw new Error(
+        "interactive review requires an interactive terminal; scripted tests must inject one",
+      );
+    }
+
+    const reviewer = initialBy ?? (await askReviewer(terminal));
+    if (reviewer === undefined) {
+      // Lost before a session even started: still leave a record of that.
+      dependencies.writeOut(summaryLine(counts));
+      return 0;
+    }
+
+    const nextId = createUuidV7Generator({
+      now: dependencies.now,
+      randomBytes: dependencies.randomBytes,
+    });
+    const skippedPairs = new Set<string>();
+
+    try {
+      for (;;) {
+        const records = await readLog(root);
+        const logIssues = verifyLog(records, { knownExtractors });
+        if (logIssues.length > 0) {
+          throw new Error(
+            `cannot build review queue: log has ${String(logIssues.length)} verification issue(s)`,
+          );
+        }
+        const queue = buildReviewQueue(records, {
+          now: queueNow,
+          rules: foldRules,
+        }).filter((candidate) => !skippedPairs.has(pairKey(candidate)));
+        const candidate = queue[0];
+        if (candidate === undefined) {
+          break;
+        }
+
+        const reviewCase = buildReviewCase(candidate, records, {
+          now: queueNow,
+          rules: foldRules,
+        });
+        // Position is honest work done, not queue length: a skip still
+        // advances it, so it doesn't read as "the queue is shrinking" while
+        // the reviewer is actually making progress through it.
+        const worked =
+          counts.same + counts.different + counts.deferred + counts.skipped;
+        renderCase(dependencies, reviewCase, worked + 1, worked + queue.length);
+
+        const outcome = await runDecisionLoop(
+          terminal,
+          dependencies,
+          reviewCase,
+          records,
+        );
+
+        if (outcome === "quit" || outcome === undefined) {
+          break;
+        }
+        if (outcome === "skip") {
+          skippedPairs.add(pairKey(candidate));
+          counts.skipped += 1;
+          continue;
+        }
+
+        const decidedAt = new Date(dependencies.now()).toISOString();
+        const batch = prepareReviewDecision(
+          {
+            reviewCase,
+            verdict: outcome.verdict,
+            by: reviewer,
+            ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
+            ...(outcome.survivingEventId === undefined
+              ? {}
+              : { survivingEventId: outcome.survivingEventId }),
+          },
+          { at: decidedAt, nextId },
+        );
+        const verificationIssues = verifyLog([...records, ...batch], {
+          knownExtractors,
+        });
+        if (verificationIssues.length > 0) {
+          throw new Error(
+            `cannot record decision: ${verificationIssues
+              .map((issue) => `${issue.code}: ${issue.message}`)
+              .join("; ")}`,
+          );
+        }
+        const partition = decidedAt.slice(0, yearMonthLength);
+        await appendRecords(
+          join(root, "data", "judgements", `${partition}.jsonl`),
+          batch,
+          dependencies.appendFile,
+        );
+        counts[outcome.verdict] += 1;
+        dependencies.writeOut(
+          `Matched because: ${candidate.reasons.join(", ")}`,
+        );
+      }
+    } catch (error) {
+      // A reviewer who loses a session mid-way most needs to know what
+      // actually got persisted before it failed.
+      dependencies.writeOut(summaryLine(counts));
+      throw error;
+    }
+
+    dependencies.writeOut(summaryLine(counts));
+    return 0;
+  } finally {
+    await terminal.close();
+  }
+}
+
+function pairKey(candidate: ReviewCandidate): string {
+  return candidate.eventIds.toSorted().join(" ");
+}
+
+async function askReviewer(terminal: TerminalIo): Promise<string | undefined> {
+  for (;;) {
+    const answer = await terminal.question("Reviewer (person:<id>): ");
+    if (answer === undefined) {
+      return undefined;
+    }
+    const trimmed = answer.trim();
+    if (isPersonReviewer(trimmed)) {
+      return trimmed;
+    }
+  }
+}
+
+async function runDecisionLoop(
+  terminal: TerminalIo,
+  dependencies: CliDependencies,
+  reviewCase: ReviewCase,
+  records: readonly LogRecord[],
+): Promise<DecisionOutcome> {
+  for (;;) {
+    const answer = await terminal.question("Decision: ");
+    if (answer === undefined) {
+      return undefined;
+    }
+    const control = answer.trim().toLowerCase();
+    if (control === "v") {
+      for (const document of reviewCaseDocuments(reviewCase, records)) {
+        dependencies.writeOut(
+          `${documentSourceName(document)}: ${document.text}`,
+        );
+      }
+      continue;
+    }
+    if (control === "q") {
+      return "quit";
+    }
+    if (control === "k") {
+      return "skip";
+    }
+    if (control !== "s" && control !== "d" && control !== "f") {
+      continue;
+    }
+
+    const verdict: ReviewVerdict =
+      control === "s" ? "same" : control === "d" ? "different" : "deferred";
+    const reasonAnswer = await terminal.question("Reason (optional): ");
+    if (reasonAnswer === undefined) {
+      return undefined;
+    }
+    const trimmedReason = reasonAnswer.trim();
+    const reason = trimmedReason.length > 0 ? trimmedReason : undefined;
+
+    if (verdict !== "same") {
+      return { verdict, ...(reason === undefined ? {} : { reason }) };
+    }
+
+    const survivingEventId = await askSurvivor(terminal, reviewCase);
+    if (survivingEventId === undefined) {
+      return undefined;
+    }
+    return {
+      verdict,
+      survivingEventId,
+      ...(reason === undefined ? {} : { reason }),
+    };
+  }
+}
+
+async function askSurvivor(
+  terminal: TerminalIo,
+  reviewCase: ReviewCase,
+): Promise<string | undefined> {
+  for (;;) {
+    // A marked as suggested, but an explicit "a"/"b" keystroke is still
+    // required — an empty answer must never be silently taken as A.
+    const answer = await terminal.question(
+      `Surviving Event — [a] event:${reviewCase.a.eventId} (suggested) or [b] event:${reviewCase.b.eventId}: `,
+    );
+    if (answer === undefined) {
+      return undefined;
+    }
+    const choice = answer.trim().toLowerCase();
+    if (choice === "a") {
+      return reviewCase.a.eventId;
+    }
+    if (choice === "b") {
+      return reviewCase.b.eventId;
+    }
+  }
+}
+
+function renderCase(
+  dependencies: CliDependencies,
+  reviewCase: ReviewCase,
+  index: number,
+  total: number,
+): void {
+  dependencies.writeOut(
+    `Case ${String(index)} of ${String(total)} — ${reviewCase.eventDate}`,
+  );
+  renderSide(dependencies, reviewCase.a);
+  renderSide(dependencies, reviewCase.b);
+  dependencies.writeOut(reviewControls);
+}
+
+function renderSide(dependencies: CliDependencies, side: ReviewSide): void {
+  // `date` sits ahead of `start`: `compareEvents` admits pairs up to a day
+  // apart, and the header only ever carries the earlier of the two dates,
+  // so each side must assert its own or a night-apart pair reads as one.
+  const summary = [
+    side.title,
+    side.venueName,
+    side.date,
+    side.start,
+    side.showtime,
+    side.status,
+    side.ticketSignal,
+  ].filter((part): part is string => part !== undefined);
+  dependencies.writeOut(
+    `${side.label} — event:${side.eventId}${
+      summary.length > 0 ? ` (${summary.join(" · ")})` : ""
+    }`,
+  );
+  if (side.lineup !== undefined && side.lineup.length > 0) {
+    dependencies.writeOut(`  Lineup: ${side.lineup.join(", ")}`);
+  }
+  const observationCount = side.observationIds.length;
+  dependencies.writeOut(
+    `  ${String(observationCount)} ${observationCount === 1 ? "Observation" : "Observations"}`,
+  );
+  if (side.evidence.length > 0) {
+    dependencies.writeOut("  Sources:");
+    for (const evidence of side.evidence) {
+      dependencies.writeOut(
+        `    ${evidence.sourceName} · ${evidence.timeKind} ${evidence.time}`,
+      );
+      if (evidence.spans.length > 0) {
+        dependencies.writeOut(`      "${evidence.spans.join('" · "')}"`);
+      }
+    }
+  }
 }
 
 async function runVerify(

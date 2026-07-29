@@ -486,13 +486,22 @@ describe("review command", () => {
       {
         writeOut: (message) => output.push(message),
         writeError: () => undefined,
+        createTerminal: () => {
+          throw new Error("the machine queue must not open a terminal");
+        },
       },
     );
 
     expect(exitCode).toBe(0);
     expect(output).toHaveLength(1);
-    expect(output[0]).toContain(firstEventId);
-    expect(output[0]).toContain(secondEventId);
+    expect(JSON.parse(output[0] ?? "")).toEqual([
+      {
+        eventIds: [firstEventId, secondEventId],
+        eventDate: "2026-07-30",
+        impact: 2,
+        reasons: ["same-venue"],
+      },
+    ]);
   });
 
   it("rejects ambiguous positional arguments", async () => {
@@ -505,7 +514,7 @@ describe("review command", () => {
 
     expect(exitCode).toBe(1);
     expect(errors).toEqual([
-      "Usage: event-database review [--at <timestamp>] [--repository <path>]",
+      "Usage: event-database review [--interactive] [--by person:<id>] [--at <timestamp>] [--repository <path>]",
     ]);
   });
 
@@ -514,7 +523,7 @@ describe("review command", () => {
       name: "a missing option value",
       arguments: ["review", "--at"],
       error:
-        "Usage: event-database review [--at <timestamp>] [--repository <path>]",
+        "Usage: event-database review [--interactive] [--by person:<id>] [--at <timestamp>] [--repository <path>]",
     },
     {
       name: "an invalid timestamp",

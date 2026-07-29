@@ -280,3 +280,8 @@ export type Document = z.infer<typeof documentSchema>;
 export type Observation = z.infer<typeof observationSchema>;
 export type Judgement = z.infer<typeof judgementSchema>;
 export type LogRecord = z.infer<typeof logRecordSchema>;
+
+/** The Source name, regardless of which Document version grounded it. */
+export function documentSourceName(document: Document): string {
+  return document.v === 1 ? document.source : document.source.value;
+}

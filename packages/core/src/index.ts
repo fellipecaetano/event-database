@@ -1,6 +1,7 @@
 export {
   claimSchema,
   documentSchema,
+  documentSourceName,
   documentV1Schema,
   documentV2Schema,
   judgementSchema,
@@ -56,5 +57,11 @@ export type {
 } from "./fold.js";
 export { buildReviewQueue, normalizeVenueName } from "./matching.js";
 export type { ReviewCandidate, ReviewReason } from "./matching.js";
-export { judgementDraftSchema, prepareJudgement } from "./judgement.js";
-export type { JudgementDraft } from "./judgement.js";
+export {
+  judgementDraftSchema,
+  prepareJudgement,
+  prepareReviewDecision,
+} from "./judgement.js";
+export type { JudgementDraft, ReviewedDecision } from "./judgement.js";
+export { buildReviewCase, reviewCaseDocuments } from "./review.js";
+export type { ReviewCase, ReviewEvidence, ReviewSide } from "./review.js";
