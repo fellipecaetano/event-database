@@ -165,6 +165,28 @@ The ingest command must succeed before anything is considered ingested. `judge` 
 Judgement identifier and envelope and rejects references that would violate log integrity.
 The final command verifies every record, including records written outside the CLI.
 
+## Re-extract a retained Document
+
+Use re-extraction when a better Extractor reads a Document already in the log. Do not ingest
+its Artefact again. Write a draft naming the retained Document and each Observation replaced:
+
+```json
+{
+  "document": "019fa69b-63ea-778a-adbf-9660b7ea94a6",
+  "extractor": "claude-opus-5/manual@draft",
+  "observations": [
+    {
+      "supersedes": "019fa69b-63ea-778b-8ea7-232f8cbde22a",
+      "claims": {},
+      "extras": {}
+    }
+  ]
+}
+```
+
+Run `pnpm catalogue reextract /path/to/reextract.json`. The CLI inherits the prior subject,
+checks every Span against the retained Document, and appends replacement Observations only.
+
 Then report to the user: what was extracted, every judgement call you made, and everything the
 Document *failed* to supply. The gaps matter as much as the content.
 

@@ -1,4 +1,11 @@
-import { logRecordSchema, type Document, type LogRecord } from "./records.js";
+import { parseEntityReference } from "./entity-reference.js";
+import { hashText } from "./ingest.js";
+import {
+  logRecordSchema,
+  type Document,
+  type LogRecord,
+  type Observation,
+} from "./records.js";
 
 const groundedMetadataVersion = 2;
 
@@ -61,9 +68,15 @@ export type VerificationIssueCode =
   | "artefact-hash-mismatch"
   | "duplicate-artefact"
   | "duplicate-record-id"
+  | "incompatible-entity-reference"
+  | "incompatible-supersession"
+  | "invalid-entity-creation"
   | "missing-artefact"
   | "missing-document"
+  | "missing-entity"
   | "missing-observation"
+  | "missing-superseded-observation"
+  | "text-hash-mismatch"
   | "ungrounded-span"
   | "unknown-extractor";
 
@@ -86,7 +99,8 @@ export function verifyLog(
   const recordIds = new Set<string>();
   const documents = new Map<string, Document>();
   const artefacts = new Map<string, string>();
-  const observationIds = new Set<string>();
+  const observations = new Map<string, Observation>();
+  const entities = new Set<string>();
 
   for (const record of records) {
     if (recordIds.has(record.id)) {
@@ -99,13 +113,16 @@ export function verifyLog(
     recordIds.add(record.id);
 
     if (record.type === "observation") {
-      observationIds.add(record.id);
+      observations.set(record.id, record);
+      entities.add(`${record.subject.kind}:${record.subject.id}`);
     }
     if (record.type !== "document") {
       continue;
     }
 
     documents.set(record.id, record);
+    const source = record.v === 1 ? record.source : record.source.value;
+    entities.add(`source:${source}`);
     const existingDocument = artefacts.get(record.artefact_hash);
     if (existingDocument !== undefined) {
       issues.push({
@@ -118,6 +135,13 @@ export function verifyLog(
     }
     verifyDocumentMetadataSpans(record, issues);
     verifyArtefact(record, options.artefactHashes, issues);
+    if (hashText(record.text) !== record.text_hash) {
+      issues.push({
+        code: "text-hash-mismatch",
+        message: `Document text differs from text_hash`,
+        recordId: record.id,
+      });
+    }
   }
 
   for (const record of records) {
@@ -137,6 +161,31 @@ export function verifyLog(
     }
 
     if (
+      record.supersedes !== undefined &&
+      !observations.has(record.supersedes)
+    ) {
+      issues.push({
+        code: "missing-superseded-observation",
+        message: `Observation supersedes missing Observation ${record.supersedes}`,
+        recordId: record.id,
+      });
+    } else if (record.supersedes !== undefined) {
+      const parent = observations.get(record.supersedes);
+      if (
+        parent !== undefined &&
+        (parent.document !== record.document ||
+          parent.subject.kind !== record.subject.kind ||
+          parent.subject.id !== record.subject.id)
+      ) {
+        issues.push({
+          code: "incompatible-supersession",
+          message: `superseded Observation must share Document and subject identity`,
+          recordId: record.id,
+        });
+      }
+    }
+
+    if (
       options.knownExtractors !== undefined &&
       !options.knownExtractors.has(record.extractor)
     ) {
@@ -151,8 +200,27 @@ export function verifyLog(
   for (const record of records) {
     if (
       record.type === "match" &&
+      record.creates_entity === true &&
       record.subject.kind === "observation" &&
-      !observationIds.has(record.subject.id)
+      record.verdict === "same"
+    ) {
+      if (entities.has(record.entity)) {
+        issues.push({
+          code: "invalid-entity-creation",
+          message: `created entity already exists: ${record.entity}`,
+          recordId: record.id,
+        });
+      } else {
+        entities.add(record.entity);
+      }
+    }
+  }
+
+  for (const record of records) {
+    if (
+      record.type === "match" &&
+      record.subject.kind === "observation" &&
+      !observations.has(record.subject.id)
     ) {
       issues.push({
         code: "missing-observation",
@@ -160,9 +228,87 @@ export function verifyLog(
         recordId: record.id,
       });
     }
+    verifyEntityReferences(record, observations, entities, issues);
   }
 
   return issues;
+}
+
+function verifyEntityReferences(
+  record: LogRecord,
+  observations: ReadonlyMap<string, Observation>,
+  entities: ReadonlySet<string>,
+  issues: VerificationIssue[],
+): void {
+  if (record.type === "match") {
+    const target = parseEntityReference(record.entity);
+    const observation =
+      record.subject.kind === "observation"
+        ? observations.get(record.subject.id)
+        : undefined;
+    const expectedKind =
+      record.subject.kind === "venue-name"
+        ? "venue"
+        : observation?.subject.kind;
+    if (expectedKind !== undefined && target.kind !== expectedKind) {
+      issues.push({
+        code: "incompatible-entity-reference",
+        message: `Match target must be a ${expectedKind}`,
+        recordId: record.id,
+      });
+    }
+    if (record.creates_entity === true) {
+      if (
+        record.subject.kind !== "observation" ||
+        record.verdict !== "same" ||
+        observation === undefined
+      ) {
+        issues.push({
+          code: "invalid-entity-creation",
+          message: "only a same Observation Match may create an entity",
+          recordId: record.id,
+        });
+      }
+    } else if (!entities.has(record.entity)) {
+      issues.push({
+        code: "missing-entity",
+        message: `Match references missing entity ${record.entity}`,
+        recordId: record.id,
+      });
+    }
+    return;
+  }
+
+  let references: string[] = [];
+  if (record.type === "override") {
+    references = [record.entity];
+  } else if (record.type === "redirect") {
+    references = [record.from, record.to];
+    if (
+      parseEntityReference(record.from).kind !==
+      parseEntityReference(record.to).kind
+    ) {
+      issues.push({
+        code: "incompatible-entity-reference",
+        message: "Redirect endpoints must have the same kind",
+        recordId: record.id,
+      });
+    }
+  } else if (record.type === "validation") {
+    references =
+      record.target.kind === "fact"
+        ? [record.target.entity]
+        : [`${record.target.kind}:${record.target.id}`];
+  }
+  for (const reference of references) {
+    if (!entities.has(reference)) {
+      issues.push({
+        code: "missing-entity",
+        message: `${record.type} references missing entity ${reference}`,
+        recordId: record.id,
+      });
+    }
+  }
 }
 
 function verifyArtefact(

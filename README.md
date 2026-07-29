@@ -29,6 +29,7 @@ Build before invoking the CLI directly:
 pnpm build
 pnpm catalogue pending
 pnpm catalogue ingest /path/to/draft.json data/inbox/source-file
+pnpm catalogue reextract /path/to/reextract.json
 pnpm catalogue judge /path/to/judgement.json
 pnpm catalogue review
 pnpm catalogue review --at 2026-07-28T12:00:00Z
@@ -37,8 +38,10 @@ pnpm catalogue verify
 ```
 
 `ingest` validates a draft, mints record identifiers, hashes and retains the Artefact, and
-appends the Document and Observations. `judge` appends validated Matches, Overrides,
-Validations, or Redirects. `verify` validates the entire log and retained Artefact hashes.
+appends the Document and Observations with rollback if a write fails. `reextract` appends
+replacement Observations for a retained Document while preserving subject identity. `judge`
+appends validated Matches, Overrides, Validations, or Redirects. `verify` validates the entire
+log, retained text, references, and Artefact hashes.
 `review` uses the current clock and repository by default; use `--at` for reproducible
 output and `--repository` to read another checkout.
 

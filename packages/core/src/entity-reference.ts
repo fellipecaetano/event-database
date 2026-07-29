@@ -12,7 +12,7 @@ export const uuidV7Schema = z
 export const entityReferenceSchema = z
   .string()
   .regex(
-    /^(event|venue):[0-9a-f-]+$|^source:[a-z0-9][a-z0-9._/-]*$/i,
+    /^(event|venue):[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$|^source:[a-z0-9][a-z0-9._/-]*$/i,
     "expected an entity reference",
   );
 

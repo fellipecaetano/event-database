@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   LogParseError,
+  hashText,
   logRecordSchema,
   parseJsonLines,
   verifyLog,
@@ -23,7 +24,7 @@ const document: Document = {
   retrieved_at: "2026-07-27T22:55:00Z",
   text_source: "retrieved",
   artefact: "data/artefacts/post.txt",
-  text_hash: digest,
+  text_hash: hashText("Show at Venue"),
   artefact_hash: digest,
   text: "Show at Venue",
 };
@@ -165,5 +166,66 @@ describe("verifyLog", () => {
     ).toContainEqual(
       expect.objectContaining({ code: "artefact-hash-mismatch" }),
     );
+  });
+
+  it("reports retained text that no longer matches its digest", () => {
+    expect(
+      verifyLog([{ ...document, text: "Changed at Venue" }]),
+    ).toContainEqual(expect.objectContaining({ code: "text-hash-mismatch" }));
+  });
+
+  it("requires superseded Observations to exist and keep their identity", () => {
+    const missingParent = {
+      ...observation,
+      id: "019fa69b-63ea-7790-9ddb-9be94dac50a2",
+      supersedes: "019fa69b-63ea-7791-80d8-a4ff6f5ae0a1",
+    };
+    const changedIdentity = {
+      ...observation,
+      id: "019fa69b-63ea-7792-93e2-9b0684b5f873",
+      supersedes: observation.id,
+      subject: {
+        kind: "event" as const,
+        id: "019fa69b-63ea-7793-93e2-9b0684b5f873",
+      },
+    };
+
+    expect(verifyLog([document, missingParent])).toContainEqual(
+      expect.objectContaining({ code: "missing-superseded-observation" }),
+    );
+    expect(verifyLog([document, observation, changedIdentity])).toContainEqual(
+      expect.objectContaining({ code: "incompatible-supersession" }),
+    );
+  });
+
+  it("checks Match target existence and relation compatibility", () => {
+    const missingTarget = logRecordSchema.parse({
+      type: "match",
+      id: "019fa69b-63ea-7790-9ddb-9be94dac50a2",
+      at: "2026-07-27T23:00:00Z",
+      v: 1,
+      subject: { kind: "observation", id: observation.id },
+      entity: "event:019fa69b-63ea-7791-80d8-a4ff6f5ae0a1",
+      verdict: "same",
+      by: "person:reviewer",
+    });
+    const wrongKind = logRecordSchema.parse({
+      ...missingTarget,
+      id: "019fa69b-63ea-7792-93e2-9b0684b5f873",
+      entity: "venue:019fa69b-63ea-7791-80d8-a4ff6f5ae0a1",
+    });
+    const creation = logRecordSchema.parse({
+      ...missingTarget,
+      id: "019fa69b-63ea-7793-93e2-9b0684b5f873",
+      creates_entity: true,
+    });
+
+    expect(verifyLog([document, observation, missingTarget])).toContainEqual(
+      expect.objectContaining({ code: "missing-entity" }),
+    );
+    expect(verifyLog([document, observation, wrongKind])).toContainEqual(
+      expect.objectContaining({ code: "incompatible-entity-reference" }),
+    );
+    expect(verifyLog([document, observation, creation])).toEqual([]);
   });
 });

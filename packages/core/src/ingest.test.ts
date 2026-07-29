@@ -6,6 +6,7 @@ import {
   hashText,
   logRecordSchema,
   prepareIngest,
+  prepareReextraction,
   type IngestDraft,
 } from "./index.js";
 
@@ -55,6 +56,23 @@ describe("UUIDv7", () => {
         ),
       ),
     );
+  });
+
+  it("advances its logical clock when the counter starts exhausted", () => {
+    let call = 0;
+    const generate = createUuidV7Generator({
+      now: () => 1_754_000_000_000,
+      randomBytes: (length) => {
+        call += 1;
+        return call === 1
+          ? Uint8Array.from([0xff, 0xf0])
+          : new Uint8Array(length);
+      },
+    });
+
+    const identifiers = [generate(), generate()];
+
+    expect(identifiers).toEqual([...identifiers].sort());
   });
 });
 
@@ -173,5 +191,52 @@ describe("prepareIngest", () => {
         nextId: () => firstId,
       }),
     ).toThrow("unknown Extractor extractor@1");
+  });
+});
+
+describe("prepareReextraction", () => {
+  it("retains the original subject and supersedes the prior reading", () => {
+    const prepared = prepareIngest(draft, {
+      at,
+      artefact: "data/artefacts/post.html",
+      artefactHash: digest,
+      existingRecords: [],
+      extractorTrust: { "extractor@1": 1, "extractor@2": 2 },
+      nextId: (() => {
+        const ids = [firstId, secondId, thirdId];
+        return () => ids.shift() ?? firstId;
+      })(),
+    });
+
+    const [replacement] = prepareReextraction(
+      {
+        document: firstId,
+        extractor: "extractor@2",
+        observations: [
+          {
+            supersedes: secondId,
+            claims: {
+              title: { value: "Show", spans: ["Show"] },
+            },
+            extras: {},
+          },
+        ],
+      },
+      {
+        at: "2026-07-28T12:00:00Z",
+        existingRecords: [prepared.document, ...prepared.observations],
+        extractorTrust: { "extractor@1": 1, "extractor@2": 2 },
+        nextId: () => "019fa69b-63ea-7790-9ddb-9be94dac50a2",
+      },
+    );
+
+    expect(replacement).toEqual(
+      expect.objectContaining({
+        document: firstId,
+        supersedes: secondId,
+        subject: { kind: "event", id: thirdId },
+        extractor: "extractor@2",
+      }),
+    );
   });
 });

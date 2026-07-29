@@ -22,6 +22,8 @@ const digest = "a".repeat(64);
 const rules: FoldRules = {
   version: "rules@1",
   extractorTrust: { "model@1": 1 },
+  sourceTrust: {},
+  sourceTrustOverrides: {},
 };
 const now = new Date("2026-07-28T12:00:00Z");
 

@@ -8,6 +8,8 @@ import {
   readFile,
   rename,
   stat,
+  truncate,
+  unlink,
 } from "node:fs/promises";
 import { basename, isAbsolute, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -21,6 +23,8 @@ import {
   parseJsonLines,
   prepareIngest,
   prepareJudgement,
+  prepareReextraction,
+  sourceTrustProfiles,
   verifyLog,
   type Document,
   type JudgementDraft,
@@ -33,6 +37,7 @@ interface CliDependencies {
   readonly writeError: (message: string) => void;
   readonly now: () => number;
   readonly randomBytes: (length: number) => Uint8Array;
+  readonly appendFile: (path: string, data: string) => Promise<void>;
 }
 
 const defaultDependencies: CliDependencies = {
@@ -44,6 +49,7 @@ const defaultDependencies: CliDependencies = {
   },
   now: Date.now,
   randomBytes: (length) => randomBytes(length),
+  appendFile: async (path, data) => appendFile(path, data, "utf8"),
 };
 
 const foldRules: FoldRules = {
@@ -52,6 +58,8 @@ const foldRules: FoldRules = {
     "claude-opus-5/manual@draft": 1,
     "tsv-parser@1": 2,
   },
+  sourceTrust: sourceTrustProfiles,
+  sourceTrustOverrides: {},
 };
 const knownExtractors = new Set(Object.keys(foldRules.extractorTrust));
 const yearMonthLength = 7;
@@ -80,6 +88,9 @@ export async function runCli(
     if (command === "review") {
       return await runReview(arguments_.slice(1), dependencies);
     }
+    if (command === "reextract") {
+      return await runReextract(arguments_.slice(1), dependencies);
+    }
     if (command === "pending") {
       return await runPending(arguments_.slice(1), dependencies);
     }
@@ -87,7 +98,7 @@ export async function runCli(
       return await runJudge(arguments_.slice(1), dependencies);
     }
     dependencies.writeError(
-      "Usage: event-database <ingest|judge|pending|review|verify> [arguments]",
+      "Usage: event-database <ingest|judge|pending|reextract|review|verify> [arguments]",
     );
     return 1;
   } catch (error) {
@@ -96,6 +107,59 @@ export async function runCli(
     );
     return 1;
   }
+}
+
+async function runReextract(
+  arguments_: readonly string[],
+  dependencies: CliDependencies,
+): Promise<number> {
+  const [draftPath, root = process.cwd()] = arguments_;
+  if (draftPath === undefined) {
+    dependencies.writeError(
+      "Usage: event-database reextract <draft.json> [repository]",
+    );
+    return 1;
+  }
+  const existingRecords = await readLog(root);
+  const text = await readFile(draftPath, "utf8");
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`invalid re-extraction draft JSON: ${draftPath}`, {
+      cause: error,
+    });
+  }
+  const at = new Date(dependencies.now()).toISOString();
+  const observations = prepareReextraction(value, {
+    at,
+    existingRecords,
+    extractorTrust: foldRules.extractorTrust,
+    nextId: createUuidV7Generator({
+      now: dependencies.now,
+      randomBytes: dependencies.randomBytes,
+    }),
+  });
+  const issues = verifyLog([...existingRecords, ...observations], {
+    knownExtractors,
+  });
+  if (issues.length > 0) {
+    throw new Error(
+      `cannot re-extract: ${issues
+        .map((issue) => `${issue.code}: ${issue.message}`)
+        .join("; ")}`,
+    );
+  }
+  const partition = at.slice(0, yearMonthLength);
+  await appendRecords(
+    join(root, "data", "observations", `${partition}.jsonl`),
+    observations,
+    dependencies.appendFile,
+  );
+  dependencies.writeOut(
+    `Re-extracted ${String(observations.length)} Observations.`,
+  );
+  return 0;
 }
 
 async function runJudge(
@@ -138,9 +202,11 @@ async function runJudge(
     );
   }
   const partition = at.slice(0, yearMonthLength);
-  await appendRecords(join(root, "data", "judgements", `${partition}.jsonl`), [
-    judgement,
-  ]);
+  await appendRecords(
+    join(root, "data", "judgements", `${partition}.jsonl`),
+    [judgement],
+    dependencies.appendFile,
+  );
   dependencies.writeOut(`Recorded ${judgement.type} ${judgement.id}.`);
   return 0;
 }
@@ -306,15 +372,37 @@ async function runIngest(
   });
 
   await mkdir(join(root, "data", "artefacts"), { recursive: true });
-  await rename(artefactPath, destination);
   const partition = at.slice(0, yearMonthLength);
-  await appendRecords(join(root, "data", "documents", `${partition}.jsonl`), [
-    prepared.document,
-  ]);
-  await appendRecords(
-    join(root, "data", "observations", `${partition}.jsonl`),
-    prepared.observations,
+  const documentPath = join(root, "data", "documents", `${partition}.jsonl`);
+  const observationPath = join(
+    root,
+    "data",
+    "observations",
+    `${partition}.jsonl`,
   );
+  const originalSizes = new Map([
+    [documentPath, await fileSize(documentPath)],
+    [observationPath, await fileSize(observationPath)],
+  ]);
+  await rename(artefactPath, destination);
+  try {
+    await appendRecords(
+      documentPath,
+      [prepared.document],
+      dependencies.appendFile,
+    );
+    await appendRecords(
+      observationPath,
+      prepared.observations,
+      dependencies.appendFile,
+    );
+  } catch (error) {
+    await Promise.all(
+      [...originalSizes].map(([path, size]) => restoreFile(path, size)),
+    );
+    await rename(destination, artefactPath);
+    throw error;
+  }
 
   const noun =
     prepared.observations.length === 1 ? "Observation" : "Observations";
@@ -356,12 +444,50 @@ function assertInboxArtefact(root: string, artefactPath: string): void {
 async function appendRecords(
   path: string,
   records: readonly LogRecord[],
+  append: (path: string, data: string) => Promise<void>,
 ): Promise<void> {
   if (records.length === 0) {
     return;
   }
   const lines = records.map((record) => JSON.stringify(record)).join("\n");
-  await appendFile(path, `${lines}\n`, "utf8");
+  await append(path, `${lines}\n`);
+}
+
+async function fileSize(path: string): Promise<number | undefined> {
+  try {
+    return (await stat(path)).size;
+  } catch (error) {
+    if (isMissingPath(error)) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+async function restoreFile(
+  path: string,
+  size: number | undefined,
+): Promise<void> {
+  if (size === undefined) {
+    try {
+      await unlink(path);
+    } catch (error) {
+      if (!isMissingPath(error)) {
+        throw error;
+      }
+    }
+    return;
+  }
+  await truncate(path, size);
+}
+
+function isMissingPath(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
 }
 
 async function readLog(root: string): Promise<LogRecord[]> {

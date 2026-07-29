@@ -14,6 +14,12 @@ import { compareJudgementPrecedence } from "./judgement-precedence.js";
 export interface FoldRules {
   readonly version: string;
   readonly extractorTrust: Readonly<Record<string, number>>;
+  readonly sourceTrust: Readonly<
+    Record<string, Readonly<Record<string, number>>>
+  >;
+  readonly sourceTrustOverrides: Readonly<
+    Record<string, Readonly<Record<string, number>>>
+  >;
 }
 
 export interface FoldOptions {
@@ -40,6 +46,7 @@ export interface ProjectedEntity {
   readonly id: string;
   readonly observationIds: string[];
   readonly facts: Readonly<Record<string, ProjectedFact>>;
+  readonly staleValidationIds: string[];
 }
 
 export interface Catalogue {
@@ -52,6 +59,8 @@ interface SourcedClaim {
   readonly claim: Claim;
   readonly observation: Observation;
   readonly source: string;
+  readonly sourceTime: string;
+  readonly trust: number;
 }
 
 export function fold(
@@ -65,6 +74,9 @@ export function fold(
   );
   const observations = records.filter(
     (record): record is Observation => record.type === "observation",
+  );
+  const observationsById = new Map(
+    observations.map((observation) => [observation.id, observation]),
   );
   const redirects = buildRedirects(records);
   const matches = selectObservationMatches(records);
@@ -83,7 +95,11 @@ export function fold(
   const venues: ProjectedEntity[] = [];
   for (const [entity, groupedObservations] of groups) {
     const { kind, id } = parseEntityReference(entity);
-    const selectedObservations = selectReadings(groupedObservations, rules);
+    const selectedObservations = selectReadings(
+      groupedObservations,
+      observationsById,
+      rules,
+    );
     const facts = resolveFacts(
       entity,
       selectedObservations,
@@ -92,12 +108,23 @@ export function fold(
       redirects,
       rules,
     );
+    const { existence, staleValidationIds } = projectExistence(
+      entity,
+      selectedObservations,
+      documents,
+      records,
+      redirects,
+      rules,
+      facts,
+    );
+    const projectedFacts = { ...facts, existence };
     const projected = {
       id,
       observationIds: groupedObservations
         .map((observation) => observation.id)
         .sort(),
-      facts,
+      facts: projectedFacts,
+      staleValidationIds,
     };
     if (kind === "event") {
       events.push(projected);
@@ -159,15 +186,26 @@ function selectObservationMatches(
     ) {
       continue;
     }
-    const matches = candidates.get(record.subject.id) ?? [];
+    const pair = `${record.subject.id}\u0000${record.entity}`;
+    const matches = candidates.get(pair) ?? [];
     matches.push(record);
-    candidates.set(record.subject.id, matches);
+    candidates.set(pair, matches);
   }
 
-  const selected = new Map<string, string>();
-  for (const [observationId, matches] of candidates) {
+  const accepted = new Map<string, Extract<LogRecord, { type: "match" }>[]>();
+  for (const matches of candidates.values()) {
     const match = matches.toSorted(compareMatches).at(-1);
-    if (match?.verdict === "same") {
+    if (match?.verdict !== "same" || match.subject.kind !== "observation") {
+      continue;
+    }
+    const same = accepted.get(match.subject.id) ?? [];
+    same.push(match);
+    accepted.set(match.subject.id, same);
+  }
+  const selected = new Map<string, string>();
+  for (const [observationId, matches] of accepted) {
+    const match = matches.toSorted(compareMatches).at(-1);
+    if (match !== undefined) {
       selected.set(observationId, match.entity);
     }
   }
@@ -183,14 +221,12 @@ function compareMatches(
 
 function selectReadings(
   observations: readonly Observation[],
+  allObservations: ReadonlyMap<string, Observation>,
   rules: FoldRules,
 ): Observation[] {
-  const byId = new Map(
-    observations.map((observation) => [observation.id, observation]),
-  );
   const lineages = new Map<string, Observation[]>();
   for (const observation of observations) {
-    const root = findLineageRoot(observation, byId);
+    const root = findLineageRoot(observation, allObservations);
     const lineage = lineages.get(root) ?? [];
     lineage.push(observation);
     lineages.set(root, lineage);
@@ -226,6 +262,15 @@ function findLineageRoot(
     if (parent === undefined) {
       break;
     }
+    if (
+      parent.document !== current.document ||
+      parent.subject.kind !== current.subject.kind ||
+      parent.subject.id !== current.subject.id
+    ) {
+      throw new Error(
+        "Observation supersession must preserve Document and subject identity",
+      );
+    }
     current = parent;
   }
   return current.id;
@@ -243,6 +288,7 @@ function resolveFacts(
   redirects: ReadonlyMap<string, string>,
   rules: FoldRules,
 ): Readonly<Record<string, ProjectedFact>> {
+  const sourceKinds = buildSourceKinds(records);
   const claimsByField = new Map<string, SourcedClaim[]>();
   for (const observation of observations) {
     const document = documents.get(observation.document);
@@ -255,7 +301,19 @@ function resolveFacts(
         continue;
       }
       const claims = claimsByField.get(field) ?? [];
-      claims.push({ claim, observation, source });
+      claims.push({
+        claim,
+        observation,
+        source,
+        sourceTime: documentSourceTime(document),
+        trust: sourceTrust(
+          source,
+          sourceKinds.get(source),
+          observation.subject.kind,
+          field,
+          rules,
+        ),
+      });
       claimsByField.set(field, claims);
     }
   }
@@ -279,7 +337,9 @@ function selectLatestClaimsBySource(
     const existing = latest.get(claim.source);
     if (
       existing === undefined ||
-      existing.observation.at.localeCompare(claim.observation.at) < 0
+      existing.sourceTime.localeCompare(claim.sourceTime) < 0 ||
+      (existing.sourceTime === claim.sourceTime &&
+        existing.observation.at.localeCompare(claim.observation.at) < 0)
     ) {
       latest.set(claim.source, claim);
     }
@@ -301,8 +361,9 @@ function selectSupportedValue(claims: readonly SourcedClaim[]): ProjectedFact {
   const winner = [...support.values()]
     .toSorted(
       (left, right) =>
+        strongestTrust(left) - strongestTrust(right) ||
         left.length - right.length ||
-        newestObservationAt(left).localeCompare(newestObservationAt(right)),
+        newestSourceTime(left).localeCompare(newestSourceTime(right)),
     )
     .at(-1);
   if (winner === undefined) {
@@ -322,13 +383,58 @@ function selectSupportedValue(claims: readonly SourcedClaim[]): ProjectedFact {
   return { state: "known", value: claim.value, confidence, evidence };
 }
 
-function newestObservationAt(claims: readonly SourcedClaim[]): string {
+function strongestTrust(claims: readonly SourcedClaim[]): number {
+  return Math.max(...claims.map((claim) => claim.trust));
+}
+
+function newestSourceTime(claims: readonly SourcedClaim[]): string {
   return claims.reduce(
     (latest, claim) =>
-      claim.observation.at.localeCompare(latest) > 0
-        ? claim.observation.at
-        : latest,
+      claim.sourceTime.localeCompare(latest) > 0 ? claim.sourceTime : latest,
     "",
+  );
+}
+
+function documentSourceTime(document: Document): string {
+  const publishedAt =
+    document.v === 1 ? document.published_at : document.published_at?.value;
+  return publishedAt ?? document.retrieved_at;
+}
+
+function buildSourceKinds(records: readonly LogRecord[]): Map<string, string> {
+  const kinds = new Map<string, string>();
+  const overrides = records
+    .filter(
+      (record): record is Extract<LogRecord, { type: "override" }> =>
+        record.type === "override" &&
+        record.entity.startsWith("source:") &&
+        record.field === "kind",
+    )
+    .toSorted((left, right) => left.at.localeCompare(right.at));
+  for (const override of overrides) {
+    if (typeof override.value === "string") {
+      kinds.set(override.entity.slice("source:".length), override.value);
+    }
+  }
+  return kinds;
+}
+
+function sourceTrust(
+  source: string,
+  kind: string | undefined,
+  subjectKind: Observation["subject"]["kind"],
+  field: string,
+  rules: FoldRules,
+): number {
+  const qualifiedField = `${subjectKind}.${field}`;
+  return (
+    rules.sourceTrustOverrides[source]?.[qualifiedField] ??
+    rules.sourceTrustOverrides[source]?.[field] ??
+    (kind === undefined
+      ? undefined
+      : (rules.sourceTrust[kind]?.[qualifiedField] ??
+        rules.sourceTrust[kind]?.[field])) ??
+    0
   );
 }
 
@@ -398,4 +504,76 @@ function applyValidations(
       };
     }
   }
+}
+
+function projectExistence(
+  entity: string,
+  observations: readonly Observation[],
+  documents: ReadonlyMap<string, Document>,
+  records: readonly LogRecord[],
+  redirects: ReadonlyMap<string, string>,
+  rules: FoldRules,
+  facts: Readonly<Record<string, ProjectedFact>>,
+): {
+  readonly existence: ProjectedFact;
+  readonly staleValidationIds: string[];
+} {
+  const sources = new Set<string>();
+  for (const observation of observations) {
+    const document = documents.get(observation.document);
+    if (document !== undefined) {
+      sources.add(document.v === 1 ? document.source : document.source.value);
+    }
+  }
+  const evidence = observations.map((observation) => observation.id).sort();
+  let confidence: Confidence =
+    sources.size > 1 ? "corroborated" : "single-source";
+  const staleValidationIds: string[] = [];
+  const validations = records.filter(
+    (record): record is Extract<LogRecord, { type: "validation" }> =>
+      record.type === "validation" &&
+      record.target.kind !== "fact" &&
+      resolveRedirect(formatEntityReference(record.target), redirects) ===
+        entity,
+  );
+  for (const validation of validations) {
+    if (
+      validation.rules === rules.version &&
+      validationMatchesFacts(validation.vouched_for, facts)
+    ) {
+      confidence = "validated";
+      evidence.push(validation.id);
+    } else {
+      staleValidationIds.push(validation.id);
+    }
+  }
+  return {
+    existence: {
+      state: "known",
+      value: true,
+      confidence,
+      evidence,
+    },
+    staleValidationIds: staleValidationIds.sort(),
+  };
+}
+
+function validationMatchesFacts(
+  vouchedFor: JsonValue,
+  facts: Readonly<Record<string, ProjectedFact>>,
+): boolean {
+  if (
+    vouchedFor === null ||
+    Array.isArray(vouchedFor) ||
+    typeof vouchedFor !== "object"
+  ) {
+    return false;
+  }
+  return Object.entries(vouchedFor).every(([field, expected]) => {
+    const fact = facts[field];
+    return (
+      fact?.state === "known" &&
+      canonicalJson(fact.value) === canonicalJson(expected)
+    );
+  });
 }

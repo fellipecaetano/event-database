@@ -39,6 +39,40 @@ const unknownClaimSchema = z
 
 export const claimSchema = z.union([statedClaimSchema, unknownClaimSchema]);
 
+type JsonValueOutput = z.output<typeof jsonValueSchema>;
+type UnknownClaim = z.output<typeof unknownClaimSchema>;
+type StatedClaim<Value extends JsonValueOutput> = Omit<
+  z.output<typeof statedClaimSchema>,
+  "value"
+> & { readonly value: Value };
+
+function typedClaimSchema<Value extends JsonValueOutput>(
+  value: z.ZodType<Value>,
+): z.ZodType<StatedClaim<Value> | UnknownClaim> {
+  return z.union([statedClaimSchema.extend({ value }), unknownClaimSchema]);
+}
+
+const stringClaimSchema = typedClaimSchema(z.string().min(1));
+const stringArrayClaimSchema = typedClaimSchema(
+  z.array(z.string().min(1)).min(1),
+);
+const dateClaimSchema = typedClaimSchema(z.iso.date());
+const localOrOffsetDateTimeSchema = z
+  .string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?$/u,
+  )
+  .refine((value) => !Number.isNaN(Date.parse(value)), "expected a datetime");
+const dateTimeClaimSchema = typedClaimSchema(
+  z.union([z.iso.date(), localOrOffsetDateTimeSchema]),
+);
+const moneyClaimSchema = typedClaimSchema(z.number().nonnegative());
+const booleanClaimSchema = typedClaimSchema(z.boolean());
+const urlClaimSchema = typedClaimSchema(z.url());
+const statusClaimSchema = typedClaimSchema(
+  z.enum(["scheduled", "cancelled", "postponed", "sold_out"]),
+);
+
 const groundedMetadataSchema = z
   .object({
     value: z.string().min(1),
@@ -91,28 +125,28 @@ export const documentSchema = z.discriminatedUnion("v", [
 
 const eventClaimsSchema = z
   .object({
-    title: claimSchema.optional(),
-    date: claimSchema.optional(),
-    start: claimSchema.optional(),
-    showtime: claimSchema.optional(),
-    end: claimSchema.optional(),
-    venue_name: claimSchema.optional(),
-    lineup: claimSchema.optional(),
-    genre_words: claimSchema.optional(),
-    price_from: claimSchema.optional(),
-    tickets_exist: claimSchema.optional(),
-    ticket_url: claimSchema.optional(),
-    tickets_at_door: claimSchema.optional(),
-    status: claimSchema.optional(),
+    title: stringClaimSchema.optional(),
+    date: dateClaimSchema.optional(),
+    start: dateTimeClaimSchema.optional(),
+    showtime: dateTimeClaimSchema.optional(),
+    end: dateTimeClaimSchema.optional(),
+    venue_name: stringClaimSchema.optional(),
+    lineup: stringArrayClaimSchema.optional(),
+    genre_words: stringArrayClaimSchema.optional(),
+    price_from: moneyClaimSchema.optional(),
+    tickets_exist: booleanClaimSchema.optional(),
+    ticket_url: urlClaimSchema.optional(),
+    tickets_at_door: booleanClaimSchema.optional(),
+    status: statusClaimSchema.optional(),
   })
   .strict();
 
 const venueClaimsSchema = z
   .object({
-    venue_name: claimSchema.optional(),
-    city: claimSchema.optional(),
-    address: claimSchema.optional(),
-    neighbourhood: claimSchema.optional(),
+    venue_name: stringClaimSchema.optional(),
+    city: stringClaimSchema.optional(),
+    address: stringClaimSchema.optional(),
+    neighbourhood: stringClaimSchema.optional(),
     opening_hours: claimSchema.optional(),
   })
   .strict();
@@ -170,6 +204,7 @@ export const matchSchema = z
     by: z.string().min(1),
     score: z.number().min(0).max(1).optional(),
     proposed: z.boolean().optional(),
+    creates_entity: z.boolean().optional(),
     reason: z.string().min(1).optional(),
   })
   .strict();

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
+import { uuidV7Schema } from "./entity-reference.js";
 import {
   claimSchema,
   documentV2Schema,
@@ -55,12 +56,15 @@ export function createUuidV7Generator({
   let counter = 0;
 
   return () => {
-    const millisecond = Math.floor(now());
+    let millisecond = Math.max(Math.floor(now()), lastMillisecond);
     if (millisecond === lastMillisecond) {
       if (counter === uuidV7Layout.counter.maximum) {
-        throw new Error("UUIDv7 counter exhausted within one millisecond");
+        millisecond += 1;
+        counter = 0;
+        lastMillisecond = millisecond;
+      } else {
+        counter += 1;
       }
-      counter += 1;
     } else {
       const randomCounter = randomBytes(uuidV7Layout.counter.randomBytes);
       counter =
@@ -144,6 +148,24 @@ export const ingestDraftSchema = z
 
 export type IngestDraft = z.input<typeof ingestDraftSchema>;
 
+export const reextractionDraftSchema = z
+  .object({
+    document: uuidV7Schema,
+    extractor: z.string().min(1),
+    observations: z.array(
+      z
+        .object({
+          supersedes: uuidV7Schema,
+          claims: z.record(z.string(), claimSchema),
+          extras: z.record(z.string(), claimSchema).default({}),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type ReextractionDraft = z.input<typeof reextractionDraftSchema>;
+
 interface PrepareIngestContext {
   readonly at: string;
   readonly artefact: string;
@@ -215,6 +237,53 @@ export function prepareIngest(
   });
 
   return { document, observations };
+}
+
+export function prepareReextraction(
+  input: unknown,
+  context: Pick<
+    PrepareIngestContext,
+    "at" | "existingRecords" | "extractorTrust" | "nextId"
+  >,
+): Observation[] {
+  const draft = reextractionDraftSchema.parse(input);
+  if (!Object.hasOwn(context.extractorTrust, draft.extractor)) {
+    throw new Error(`unknown Extractor ${draft.extractor}`);
+  }
+  const document = context.existingRecords.find(
+    (record): record is Document =>
+      record.type === "document" && record.id === draft.document,
+  );
+  if (document === undefined) {
+    throw new Error(`missing Document ${draft.document}`);
+  }
+  const observations = new Map(
+    context.existingRecords
+      .filter((record): record is Observation => record.type === "observation")
+      .map((observation) => [observation.id, observation]),
+  );
+  return draft.observations.map((replacement) => {
+    const previous = observations.get(replacement.supersedes);
+    if (previous?.document !== document.id) {
+      throw new Error(
+        `cannot re-extract missing Observation ${replacement.supersedes} from Document ${document.id}`,
+      );
+    }
+    const record = observationSchema.parse({
+      type: "observation",
+      id: context.nextId(),
+      at: context.at,
+      v: recordVersions.observation,
+      document: document.id,
+      extractor: draft.extractor,
+      supersedes: previous.id,
+      subject: previous.subject,
+      claims: replacement.claims,
+      extras: replacement.extras,
+    });
+    verifyClaimSpans(record, document.text);
+    return record;
+  });
 }
 
 function verifyMetadataSpans(

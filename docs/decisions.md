@@ -142,6 +142,10 @@ under **[Still open](#still-open)** at the end.
       session calls it through the shell, you call it by hand, a future collector calls it as
       a subprocess. The logic must live in a core library with the CLI as a thin shell, so an
       MCP server or a scraper becomes another thin adapter rather than a duplicate.
+- [x] **A failed ingest is retryable.** The CLI records the original partition sizes before
+      moving the Artefact. If either append fails, it restores both partitions and returns the
+      Artefact to the inbox. A retry therefore sees the same pre-ingest state rather than a
+      partial Document that the duplicate guard makes impossible to finish.
 - [x] **Document filenames stay arbitrary.** Whatever the operating system assigned is fine;
       the record holds everything that matters. Naming files by retrieval timestamp was
       considered and rejected: it would put `retrieved_at` in a second home that can disagree
@@ -263,6 +267,11 @@ under **[Still open](#still-open)** at the end.
       numbers are derived, never stored. This keeps "is this event real?" separable from "is
       this detail right?", which are driven by different evidence and answer different
       questions: whether to show an Event, versus how to render its details.
+
+      The projection materialises `existence` like any other fact. Entity Validations promote
+      it only while their recorded snapshot and rules still match; stale Validation ids are
+      surfaced separately. `Provisional` is derived from existence not being Validated, so no
+      second boolean can disagree with the fact.
 - [x] **How matching itself is measured.** Audits extend to Matches, not only to facts. Sample
       at random, stratified by who decided — scorer, LLM, person — and verify by reading both
       source Documents, recording the outcome apart from Validations.
@@ -296,6 +305,13 @@ under **[Still open](#still-open)** at the end.
       ticketing platform knows the price and whether tickets exist, an aggregator that copies
       others knows nothing first-hand. Trusting by kind means a new Source is useful the
       moment you meet it.
+
+      The initial profiles are categorical: venue channels are high for programme and Venue
+      details; ticketing is high for commerce; promoters are high for programme; directories
+      are high for Venue details; aggregators are low throughout; self is high throughout.
+      Listings are normal for programme and commerce. Resolution compares strongest trust,
+      then distinct-Source support, then publication time. Trust chooses between claims but
+      never promotes a lone witness to Corroborated.
 
 ## E. Matching
 
@@ -431,6 +447,10 @@ under **[Still open](#still-open)** at the end.
       Event. Merging additionally records a redirect from the retired ID to the surviving one,
       which is the only thing re-pointing cannot provide; splitting mints a new ID and leaves
       the original with whichever side is the better continuation.
+
+      References normally require an existing compatible entity. A split is the explicit
+      exception: its `same` Observation Match carries `creates_entity: true`, making the new
+      identity deliberate and mechanically distinguishable from a mistyped target.
 
 ## F. Time details
 

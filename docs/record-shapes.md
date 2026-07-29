@@ -166,6 +166,9 @@ Its **kind** — `venue-channel`, `ticketing`, `listings`, `promoter`, `aggregat
 
 A kind is what carries a Source's per-field trust, and those trust profiles live in code —
 so the vocabulary is effectively closed. Adding a kind means adding its trust profile.
+Profiles use three internal ranks — high, normal and low — over event-programme, ticketing
+and Venue-detail fields. A conflicting value wins by strongest Source trust, then number of
+distinct Sources, then publication time. Trust never turns one Source into corroboration.
 
 This shape exists because the alternative failed immediately. With the kind stated on each
 Document, `instagram/example-venue` was ingested as a `promoter` and then, three Documents later,
@@ -279,6 +282,10 @@ is what "until an Observation touches either subject" refers to.
 Later Matches supersede earlier ones. `by` ranks in three tiers, not two: `person:*` outranks
 `llm:*`, which outranks `matcher:*`.
 
+Match judgements resolve per subject-and-entity pair: rejecting one candidate cannot erase an
+accepted Match to another. Targets normally must already exist. A split may deliberately mint
+a compatible target with `"creates_entity": true`; only a `same` Observation Match may do so.
+
 **The two venue mechanisms resolve different things and do not compete.** A Match on an
 Observation decides which Venue that Observation describes, so a claim like `opening_hours`
 lands on whatever its own Observation resolves to. A `venue-name` Match decides which Venue a
@@ -309,6 +316,11 @@ string on an *Event* refers to. Neither overrides the other.
 Validation targets either a whole entity ("this venue is real") or a single fact ("this
 start time is right"). Both are needed: the first is what clears a Provisional Venue, the
 second is what calibration counts.
+
+Every projected entity has an `existence` fact supported by its Observations. A current entity
+Validation whose `vouched_for` snapshot still matches promotes that fact to `validated`;
+non-matching or old-rules Validations appear in `staleValidationIds`. `Provisional` means the
+existence fact is not Validated, so no second boolean is stored.
 
 **A Validation records what it vouched for, not just what it pointed at** — the value as the
 person saw it, its tier at that moment, and `rules`, the commit of the folding rules in force.

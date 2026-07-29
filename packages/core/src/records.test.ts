@@ -59,4 +59,41 @@ describe("logRecordSchema", () => {
 
     expect(() => logRecordSchema.parse(record)).toThrow();
   });
+
+  it("rejects invalid values for typed core claims", () => {
+    const record = {
+      type: "observation",
+      id: "019fa69b-63ea-778d-964c-a63e474676a5",
+      at: "2026-07-27T22:55:00Z",
+      v: 1,
+      document: "019fa69b-63ea-778a-adbf-9660b7ea94a6",
+      extractor: "extractor@1",
+      subject: {
+        kind: "event",
+        id: "019fa69b-63ea-778e-8595-cd28e40852d1",
+      },
+      claims: {
+        date: { value: "not-a-date", spans: ["not-a-date"] },
+      },
+      extras: {},
+    };
+
+    expect(() => logRecordSchema.parse(record)).toThrow();
+  });
+
+  it("requires UUIDv7 entity identifiers", () => {
+    const record = {
+      type: "override",
+      id: "019fa69b-63ea-778d-964c-a63e474676a5",
+      at: "2026-07-27T22:55:00Z",
+      v: 1,
+      entity: "event:dead-beef",
+      field: "title",
+      value: "Show",
+      by: "person:reviewer",
+      reason: "test",
+    };
+
+    expect(() => logRecordSchema.parse(record)).toThrow();
+  });
 });

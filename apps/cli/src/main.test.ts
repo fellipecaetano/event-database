@@ -1,5 +1,6 @@
 import {
   access,
+  appendFile,
   mkdir,
   mkdtemp,
   readFile,
@@ -11,7 +12,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { Document } from "@event-database/core";
+import { hashText, type Document } from "@event-database/core";
 
 import { runCli } from "./main.js";
 
@@ -24,6 +25,7 @@ const at = "2026-07-27T22:55:00Z";
 function validDocument(
   overrides: Partial<Extract<Document, { v: 1 }>> = {},
 ): Extract<Document, { v: 1 }> {
+  const text = overrides.text ?? "Show";
   return {
     type: "document",
     id: documentId,
@@ -33,9 +35,9 @@ function validDocument(
     retrieved_at: at,
     text_source: "retrieved",
     artefact: "data/artefacts/post.txt",
-    text_hash: digest,
+    text_hash: hashText(text),
     artefact_hash: digest,
-    text: "Show",
+    text,
     ...overrides,
   };
 }
@@ -277,6 +279,123 @@ describe("ingest command", () => {
     expect(errors[0]).toContain("unknown Extractor unknown@1");
     await expect(access(artefact)).resolves.toBeUndefined();
   });
+
+  it("rolls back an interrupted multi-file ingest so retry succeeds", async () => {
+    const root = await makeRepository(validDocument());
+    const inbox = join(root, "data", "inbox");
+    await mkdir(inbox);
+    const artefact = join(inbox, "post.txt");
+    await writeFile(artefact, "new bytes");
+    const draftPath = join(root, "draft.json");
+    await writeFile(
+      draftPath,
+      JSON.stringify({
+        document: {
+          source: { value: "source", supplied_by: "person:reviewer" },
+          retrieved_at: "2026-07-28T10:00:00Z",
+          text_source: "retrieved",
+          text: "Show",
+        },
+        extractor: "tsv-parser@1",
+        observations: [
+          {
+            subject: "event",
+            claims: { title: { value: "Show", spans: ["Show"] } },
+            extras: {},
+          },
+        ],
+      }),
+    );
+    let writes = 0;
+    const interrupted = await runCli(["ingest", draftPath, artefact, root], {
+      writeOut: () => undefined,
+      writeError: () => undefined,
+      now: () => Date.parse("2026-07-28T12:00:00Z"),
+      randomBytes: (length) => new Uint8Array(length),
+      appendFile: async (...arguments_) => {
+        writes += 1;
+        if (writes === 2) {
+          throw new Error("simulated write failure");
+        }
+        await appendFile(...arguments_);
+      },
+    });
+
+    expect(interrupted).toBe(1);
+    await expect(access(artefact)).resolves.toBeUndefined();
+    expect(
+      await readFile(join(root, "data", "documents", "2026-07.jsonl"), "utf8"),
+    ).not.toContain('"source":{"value":"source"');
+
+    expect(
+      await runCli(["ingest", draftPath, artefact, root], {
+        writeOut: () => undefined,
+        writeError: () => undefined,
+        now: () => Date.parse("2026-07-28T12:00:00Z"),
+        randomBytes: (length) => new Uint8Array(length),
+      }),
+    ).toBe(0);
+  });
+});
+
+describe("reextract command", () => {
+  it("appends a replacement reading with the original subject", async () => {
+    const root = await makeRepository(validDocument());
+    const subjectId = "019fa69b-63ea-778e-8595-cd28e40852d1";
+    await writeFile(
+      join(root, "data", "observations", "2026-07.jsonl"),
+      `${JSON.stringify({
+        type: "observation",
+        id: observationId,
+        at,
+        v: 1,
+        document: documentId,
+        extractor: "tsv-parser@1",
+        subject: { kind: "event", id: subjectId },
+        claims: { title: { value: "Show", spans: ["Show"] } },
+        extras: {},
+      })}\n`,
+    );
+    const draftPath = join(root, "reextract.json");
+    await writeFile(
+      draftPath,
+      JSON.stringify({
+        document: documentId,
+        extractor: "claude-opus-5/manual@draft",
+        observations: [
+          {
+            supersedes: observationId,
+            claims: { title: { value: "Show", spans: ["Show"] } },
+            extras: {},
+          },
+        ],
+      }),
+    );
+
+    const exitCode = await runCli(["reextract", draftPath, root], {
+      writeOut: () => undefined,
+      writeError: () => undefined,
+      now: () => Date.parse("2026-07-28T12:00:00Z"),
+      randomBytes: (length) => new Uint8Array(length),
+    });
+
+    expect(exitCode).toBe(0);
+    const records = (
+      await readFile(
+        join(root, "data", "observations", "2026-07.jsonl"),
+        "utf8",
+      )
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(records.at(-1)).toEqual(
+      expect.objectContaining({
+        supersedes: observationId,
+        subject: { kind: "event", id: subjectId },
+      }),
+    );
+  });
 });
 
 describe("review command", () => {
@@ -316,7 +435,6 @@ describe("review command", () => {
           source: "source-b",
           retrieved_at: "2026-07-27T23:00:00Z",
           artefact: "data/artefacts/b.txt",
-          text_hash: "b".repeat(64),
           artefact_hash: "b".repeat(64),
           text: "event",
         }),

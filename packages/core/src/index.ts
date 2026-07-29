@@ -20,6 +20,7 @@ export {
 } from "./entity-reference.js";
 export type { EntityKind, ParsedEntityReference } from "./entity-reference.js";
 export { compareJudgementPrecedence } from "./judgement-precedence.js";
+export { sourceTrustProfiles } from "./source-trust.js";
 export type {
   Claim,
   Document,
@@ -40,8 +41,10 @@ export {
   hashText,
   ingestDraftSchema,
   prepareIngest,
+  prepareReextraction,
+  reextractionDraftSchema,
 } from "./ingest.js";
-export type { IngestDraft } from "./ingest.js";
+export type { IngestDraft, ReextractionDraft } from "./ingest.js";
 export { fold } from "./fold.js";
 export type {
   Catalogue,
