@@ -20,6 +20,8 @@ export {
   uuidV7Schema,
 } from "./entity-reference.js";
 export type { EntityKind, ParsedEntityReference } from "./entity-reference.js";
+export { ArtefactReference } from "./artefact-reference.js";
+export type { CatalogueDataStore } from "./catalogue-data-store.js";
 export { compareJudgementPrecedence } from "./judgement-precedence.js";
 export { sourceTrustProfiles } from "./source-trust.js";
 export { createProductionFoldRules, knownExtractorsFor } from "./rules.js";

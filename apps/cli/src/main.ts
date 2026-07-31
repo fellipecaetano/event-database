@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import { randomBytes } from "node:crypto";
-import { appendFile, mkdir, readdir, readFile, rename } from "node:fs/promises";
-import { basename, isAbsolute, join, relative } from "node:path";
+import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 
@@ -15,7 +14,6 @@ import {
   createUuidV7Generator,
   createReviewWorkspace,
   documentSourceName,
-  hashBytes,
   judgementDraftSchema,
   knownExtractorsFor,
   prepareIngest,
@@ -35,14 +33,8 @@ import {
   type ReviewSide,
 } from "@event-database/core";
 
-import {
-  appendRecords,
-  assertPathAbsent,
-  fileSize,
-  readArtefactHashes,
-  readLog,
-  restoreFile,
-} from "./catalogue-repository.js";
+import { LocalCatalogueData } from "./catalogue-repository.js";
+import { CatalogueDataLayout } from "./catalogue-data-layout.js";
 
 export interface TerminalIo {
   readonly isInteractive: boolean;
@@ -56,7 +48,7 @@ interface CliDependencies {
   readonly writeError: (message: string) => void;
   readonly now: () => number;
   readonly randomBytes: (length: number) => Uint8Array;
-  readonly appendFile: (path: string, data: string) => Promise<void>;
+  readonly appendFile?: (path: string, data: string) => Promise<void>;
   readonly createTerminal: () => TerminalIo;
 }
 
@@ -69,7 +61,6 @@ const defaultDependencies: CliDependencies = {
   },
   now: Date.now,
   randomBytes: (length) => randomBytes(length),
-  appendFile: async (path, data) => appendFile(path, data, "utf8"),
   createTerminal: () => {
     const rl = createInterface({
       input: process.stdin,
@@ -101,11 +92,20 @@ const defaultDependencies: CliDependencies = {
 
 const foldRules = createProductionFoldRules();
 const knownExtractors = knownExtractorsFor(foldRules);
-const yearMonthLength = 7;
 const executableArgumentCount = 2;
 const reviewOptionArgumentCount = 2;
 const reviewUsage =
   "Usage: event-database review [--interactive] [--by person:<id>] [--at <timestamp>] [--repository <path>]";
+
+function createCatalogueData(
+  root: string,
+  dependencies: CliDependencies,
+): LocalCatalogueData {
+  const layout = new CatalogueDataLayout(root);
+  return dependencies.appendFile === undefined
+    ? new LocalCatalogueData(layout)
+    : new LocalCatalogueData(layout, { appendFile: dependencies.appendFile });
+}
 
 export async function runCli(
   arguments_: readonly string[],
@@ -159,7 +159,8 @@ async function runReextract(
     );
     return 1;
   }
-  const existingRecords = await readLog(root);
+  const data = createCatalogueData(root, dependencies);
+  const existingRecords = await data.readLog();
   const text = await readFile(draftPath, "utf8");
   let value: unknown;
   try {
@@ -189,12 +190,7 @@ async function runReextract(
         .join("; ")}`,
     );
   }
-  const partition = at.slice(0, yearMonthLength);
-  await appendRecords(
-    join(root, "data", "observations", `${partition}.jsonl`),
-    observations,
-    dependencies.appendFile,
-  );
+  await data.append(observations);
   dependencies.writeOut(
     `Re-extracted ${String(observations.length)} Observations.`,
   );
@@ -212,6 +208,7 @@ async function runJudge(
     );
     return 1;
   }
+  const data = createCatalogueData(root, dependencies);
   const text = await readFile(draftPath, "utf8");
   let value: unknown;
   try {
@@ -230,7 +227,7 @@ async function runJudge(
       randomBytes: dependencies.randomBytes,
     })(),
   });
-  const issues = verifyLog([...(await readLog(root)), judgement], {
+  const issues = verifyLog([...(await data.readLog()), judgement], {
     knownExtractors,
   });
   if (issues.length > 0) {
@@ -240,12 +237,7 @@ async function runJudge(
         .join("; ")}`,
     );
   }
-  const partition = at.slice(0, yearMonthLength);
-  await appendRecords(
-    join(root, "data", "judgements", `${partition}.jsonl`),
-    [judgement],
-    dependencies.appendFile,
-  );
+  await data.append([judgement]);
   dependencies.writeOut(`Recorded ${judgement.type} ${judgement.id}.`);
   return 0;
 }
@@ -255,25 +247,15 @@ async function runPending(
   dependencies: CliDependencies,
 ): Promise<number> {
   const [root = process.cwd()] = arguments_;
-  const records = await readLog(root);
+  const data = createCatalogueData(root, dependencies);
+  const records = await data.readLog();
   const heldHashes = new Set(
     records
       .filter((record): record is Document => record.type === "document")
       .map((document) => document.artefact_hash),
   );
-  const inbox = join(root, "data", "inbox");
-  const entries = await readdir(inbox, { withFileTypes: true });
-  for (const entry of entries.toSorted((left, right) =>
-    left.name.localeCompare(right.name),
-  )) {
-    if (!entry.isFile() || entry.name.startsWith(".")) {
-      continue;
-    }
-    const path = join(inbox, entry.name);
-    const hash = hashBytes(await readFile(path));
-    if (!heldHashes.has(hash)) {
-      dependencies.writeOut(relative(root, path));
-    }
+  for (const pending of await data.pendingArtefacts(heldHashes)) {
+    dependencies.writeOut(pending.repositoryRelativePath);
   }
   return 0;
 }
@@ -325,11 +307,13 @@ async function runReview(
     }
   }
 
+  const data = createCatalogueData(root, dependencies);
+
   if (interactive) {
-    return runInteractiveReview(dependencies, root, now, by);
+    return runInteractiveReview(dependencies, data, now, by);
   }
 
-  const records = await readLog(root);
+  const records = await data.readLog();
   const issues = verifyLog(records, { knownExtractors });
   if (issues.length > 0) {
     throw new Error(
@@ -381,7 +365,7 @@ function summaryLine(counts: SessionCounts): string {
 
 async function runInteractiveReview(
   dependencies: CliDependencies,
-  root: string,
+  data: LocalCatalogueData,
   queueNow: Date,
   initialBy: string | undefined,
 ): Promise<number> {
@@ -414,7 +398,7 @@ async function runInteractiveReview(
 
     try {
       for (;;) {
-        const records = await readLog(root);
+        const records = await data.readLog();
         const logIssues = verifyLog(records, { knownExtractors });
         if (logIssues.length > 0) {
           throw new Error(
@@ -498,12 +482,7 @@ async function runInteractiveReview(
               .join("; ")}`,
           );
         }
-        const partition = decidedAt.slice(0, yearMonthLength);
-        await appendRecords(
-          join(root, "data", "judgements", `${partition}.jsonl`),
-          batch,
-          dependencies.appendFile,
-        );
+        await data.append(batch);
         counts[outcome.verdict] += 1;
         if (candidate.kind !== "proposal") {
           // Withheld until now so the pairing reasons cannot steer the
@@ -753,8 +732,11 @@ async function runVerify(
   dependencies: CliDependencies,
 ): Promise<number> {
   const [root = process.cwd()] = arguments_;
-  const records = await readLog(root);
-  const artefactHashes = await readArtefactHashes(root, records);
+  const data = createCatalogueData(root, dependencies);
+  const records = await data.readLog();
+  const artefactHashes = await data.artefactHashes(
+    records.filter((record): record is Document => record.type === "document"),
+  );
   const issues = verifyLog(records, { artefactHashes, knownExtractors });
   if (issues.length > 0) {
     for (const issue of issues) {
@@ -782,10 +764,9 @@ async function runIngest(
     return 1;
   }
 
-  assertInboxArtefact(root, artefactPath);
-  const artefactBytes = await readFile(artefactPath);
-  const artefactHash = hashBytes(artefactBytes);
-  const existingRecords = await readLog(root);
+  const data = createCatalogueData(root, dependencies);
+  const inspectedArtefact = await data.inspectInboxArtefact(artefactPath);
+  const existingRecords = await data.readLog();
 
   const draftText = await readFile(draftPath, "utf8");
   let draftValue: unknown;
@@ -797,12 +778,10 @@ async function runIngest(
     });
   }
   const at = new Date(dependencies.now()).toISOString();
-  const destination = join(root, "data", "artefacts", basename(artefactPath));
-  await assertPathAbsent(destination);
   const prepared = prepareIngest(draftValue, {
     at,
-    artefact: relative(root, destination),
-    artefactHash,
+    artefact: inspectedArtefact.reference.value,
+    artefactHash: inspectedArtefact.hash,
     existingRecords,
     extractorTrust: foldRules.extractorTrust,
     nextId: createUuidV7Generator({
@@ -811,36 +790,14 @@ async function runIngest(
     }),
   });
 
-  await mkdir(join(root, "data", "artefacts"), { recursive: true });
-  const partition = at.slice(0, yearMonthLength);
-  const documentPath = join(root, "data", "documents", `${partition}.jsonl`);
-  const observationPath = join(
-    root,
-    "data",
-    "observations",
-    `${partition}.jsonl`,
+  await commitIngest(
+    await data.beginIngest({
+      sourcePath: inspectedArtefact.path,
+      expectedHash: inspectedArtefact.hash,
+      document: prepared.document,
+      observations: prepared.observations,
+    }),
   );
-  const originalSizes = new Map([
-    [documentPath, await fileSize(documentPath)],
-    [observationPath, await fileSize(observationPath)],
-  ]);
-  await commitIngest({
-    moveArtefact: async () => rename(artefactPath, destination),
-    appendDocument: async () =>
-      appendRecords(documentPath, [prepared.document], dependencies.appendFile),
-    appendObservations: async () =>
-      appendRecords(
-        observationPath,
-        prepared.observations,
-        dependencies.appendFile,
-      ),
-    rollbackAppends: async () => {
-      await Promise.all(
-        [...originalSizes].map(([path, size]) => restoreFile(path, size)),
-      );
-    },
-    restoreArtefact: async () => rename(destination, artefactPath),
-  });
 
   const noun =
     prepared.observations.length === 1 ? "Observation" : "Observations";
@@ -848,18 +805,6 @@ async function runIngest(
     `Ingested Document ${prepared.document.id} with ${String(prepared.observations.length)} ${noun}.`,
   );
   return 0;
-}
-
-function assertInboxArtefact(root: string, artefactPath: string): void {
-  const inbox = join(root, "data", "inbox");
-  const fromInbox = relative(inbox, artefactPath);
-  if (
-    fromInbox.length === 0 ||
-    fromInbox.startsWith("..") ||
-    isAbsolute(fromInbox)
-  ) {
-    throw new Error(`Artefact must be inside ${inbox}`);
-  }
 }
 
 const entryPoint = process.argv[1];
