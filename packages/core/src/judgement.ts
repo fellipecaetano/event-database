@@ -9,7 +9,11 @@ import {
   type Judgement,
 } from "./records.js";
 import { parseEntityReference } from "./entity-reference.js";
-import type { ProposalCase, ReviewCase, ReviewSide } from "./review.js";
+import type {
+  EventDecisionSide,
+  EventPairDecisionTarget,
+  ProposalDecisionTarget,
+} from "./decision-target.js";
 
 export const judgementDraftSchema = z.discriminatedUnion("type", [
   matchSchema.omit({ id: true, at: true, v: true }),
@@ -60,7 +64,7 @@ export function prepareJudgement(
 }
 
 export interface ReviewedDecision {
-  readonly reviewCase: ReviewCase;
+  readonly reviewCase: EventPairDecisionTarget;
   readonly verdict: "same" | "different" | "deferred";
   /** `person:<id>` reviewer. */
   readonly by: string;
@@ -117,7 +121,7 @@ export function prepareReviewDecision(
 }
 
 export interface ProposalDecision {
-  readonly proposal: ProposalCase;
+  readonly proposal: ProposalDecisionTarget;
   readonly verdict: "same" | "different" | "deferred";
   /** `person:<id>` reviewer. */
   readonly by: string;
@@ -195,7 +199,7 @@ export function prepareProposalDecision(
 }
 
 function prepareMerge(
-  reviewCase: ReviewCase,
+  reviewCase: EventPairDecisionTarget,
   by: string,
   reason: string | undefined,
   survivingEventId: string | undefined,
@@ -247,8 +251,8 @@ function prepareMerge(
  * rooms, so it is raised as a proposal and confirmed by a person.
  */
 function raiseVenueProposal(
-  survivor: ReviewSide,
-  loser: ReviewSide,
+  survivor: EventDecisionSide,
+  loser: EventDecisionSide,
   by: string,
   context: ReviewDecisionContext,
 ): Judgement[] {
@@ -280,9 +284,9 @@ function raiseVenueProposal(
 }
 
 function resolveSides(
-  reviewCase: ReviewCase,
+  reviewCase: EventPairDecisionTarget,
   survivingEventId: string,
-): { readonly survivor: ReviewSide; readonly loser: ReviewSide } {
+): { readonly survivor: EventDecisionSide; readonly loser: EventDecisionSide } {
   if (reviewCase.a.eventId === survivingEventId) {
     return { survivor: reviewCase.a, loser: reviewCase.b };
   }
@@ -294,14 +298,12 @@ function resolveSides(
   );
 }
 
-function representativeObservationId(side: ReviewSide): string {
+function representativeObservationId(side: EventDecisionSide): string {
   const [representative] = [...side.observationIds].toSorted((left, right) =>
     left.localeCompare(right),
   );
   if (representative === undefined) {
-    throw new Error(
-      `prepareReviewDecision: side ${side.label} has no Observations`,
-    );
+    throw new Error("prepareReviewDecision: side has no Observations");
   }
   return representative;
 }

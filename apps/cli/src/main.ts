@@ -1,47 +1,48 @@
 #!/usr/bin/env node
 
 import { randomBytes } from "node:crypto";
-import {
-  appendFile,
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  stat,
-  truncate,
-  unlink,
-} from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rename } from "node:fs/promises";
 import { basename, isAbsolute, join, relative } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 
 import {
   LogParseError,
-  buildProposalCase,
-  buildReviewCase,
-  buildReviewQueue,
+  buildProposalCaseFromWorkspace,
+  buildReviewCaseFromWorkspace,
+  buildReviewQueueFromWorkspace,
+  commitIngest,
   createUuidV7Generator,
+  createReviewWorkspace,
   documentSourceName,
   hashBytes,
   judgementDraftSchema,
-  parseJsonLines,
+  knownExtractorsFor,
   prepareIngest,
   prepareJudgement,
   prepareProposalDecision,
   prepareReextraction,
   prepareReviewDecision,
   reviewCaseDocuments,
-  sourceTrustProfiles,
+  createProductionFoldRules,
   verifyLog,
   type Document,
   type JudgementDraft,
-  type FoldRules,
   type LogRecord,
   type ProposalCase,
   type ReviewCandidate,
   type ReviewCase,
   type ReviewSide,
 } from "@event-database/core";
+
+import {
+  appendRecords,
+  assertPathAbsent,
+  fileSize,
+  readArtefactHashes,
+  readLog,
+  restoreFile,
+} from "./catalogue-repository.js";
 
 export interface TerminalIo {
   readonly isInteractive: boolean;
@@ -98,16 +99,8 @@ const defaultDependencies: CliDependencies = {
   },
 };
 
-const foldRules: FoldRules = {
-  version: "working-tree",
-  extractorTrust: {
-    "claude-opus-5/manual@draft": 1,
-    "tsv-parser@1": 2,
-  },
-  sourceTrust: sourceTrustProfiles,
-  sourceTrustOverrides: {},
-};
-const knownExtractors = new Set(Object.keys(foldRules.extractorTrust));
+const foldRules = createProductionFoldRules();
+const knownExtractors = knownExtractorsFor(foldRules);
 const yearMonthLength = 7;
 const executableArgumentCount = 2;
 const reviewOptionArgumentCount = 2;
@@ -344,7 +337,11 @@ async function runReview(
     );
   }
   dependencies.writeOut(
-    JSON.stringify(buildReviewQueue(records, { now, rules: foldRules })),
+    JSON.stringify(
+      buildReviewQueueFromWorkspace(
+        createReviewWorkspace(records, { now, rules: foldRules }),
+      ),
+    ),
   );
   return 0;
 }
@@ -424,20 +421,22 @@ async function runInteractiveReview(
             `cannot build review queue: log has ${String(logIssues.length)} verification issue(s)`,
           );
         }
-        const queue = buildReviewQueue(records, {
+        const workspace = createReviewWorkspace(records, {
           now: queueNow,
           rules: foldRules,
-        }).filter((candidate) => !skippedPairs.has(pairKey(candidate)));
+        });
+        const queue = buildReviewQueueFromWorkspace(workspace).filter(
+          (candidate) => !skippedPairs.has(pairKey(candidate)),
+        );
         const candidate = queue[0];
         if (candidate === undefined) {
           break;
         }
 
-        const foldOptions = { now: queueNow, rules: foldRules };
         const reviewCase =
           candidate.kind === "proposal"
-            ? buildProposalCase(candidate, records, foldOptions)
-            : buildReviewCase(candidate, records, foldOptions);
+            ? buildProposalCaseFromWorkspace(candidate, workspace)
+            : buildReviewCaseFromWorkspace(candidate, workspace);
         // Position is honest work done, not queue length: a skip still
         // advances it, so it doesn't read as "the queue is shrinking" while
         // the reviewer is actually making progress through it.
@@ -771,34 +770,6 @@ async function runVerify(
   return 0;
 }
 
-async function readArtefactHashes(
-  root: string,
-  records: readonly LogRecord[],
-): Promise<Map<string, string>> {
-  const hashes = new Map<string, string>();
-  for (const document of records.filter(
-    (record): record is Document => record.type === "document",
-  )) {
-    try {
-      hashes.set(
-        document.artefact,
-        hashBytes(await readFile(join(root, document.artefact))),
-      );
-    } catch (error) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
-        continue;
-      }
-      throw error;
-    }
-  }
-  return hashes;
-}
-
 async function runIngest(
   arguments_: readonly string[],
   dependencies: CliDependencies,
@@ -853,25 +824,23 @@ async function runIngest(
     [documentPath, await fileSize(documentPath)],
     [observationPath, await fileSize(observationPath)],
   ]);
-  await rename(artefactPath, destination);
-  try {
-    await appendRecords(
-      documentPath,
-      [prepared.document],
-      dependencies.appendFile,
-    );
-    await appendRecords(
-      observationPath,
-      prepared.observations,
-      dependencies.appendFile,
-    );
-  } catch (error) {
-    await Promise.all(
-      [...originalSizes].map(([path, size]) => restoreFile(path, size)),
-    );
-    await rename(destination, artefactPath);
-    throw error;
-  }
+  await commitIngest({
+    moveArtefact: async () => rename(artefactPath, destination),
+    appendDocument: async () =>
+      appendRecords(documentPath, [prepared.document], dependencies.appendFile),
+    appendObservations: async () =>
+      appendRecords(
+        observationPath,
+        prepared.observations,
+        dependencies.appendFile,
+      ),
+    rollbackAppends: async () => {
+      await Promise.all(
+        [...originalSizes].map(([path, size]) => restoreFile(path, size)),
+      );
+    },
+    restoreArtefact: async () => rename(destination, artefactPath),
+  });
 
   const noun =
     prepared.observations.length === 1 ? "Observation" : "Observations";
@@ -879,23 +848,6 @@ async function runIngest(
     `Ingested Document ${prepared.document.id} with ${String(prepared.observations.length)} ${noun}.`,
   );
   return 0;
-}
-
-async function assertPathAbsent(path: string): Promise<void> {
-  try {
-    await stat(path);
-  } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
-      return;
-    }
-    throw error;
-  }
-  throw new Error(`Artefact destination already exists: ${path}`);
 }
 
 function assertInboxArtefact(root: string, artefactPath: string): void {
@@ -908,73 +860,6 @@ function assertInboxArtefact(root: string, artefactPath: string): void {
   ) {
     throw new Error(`Artefact must be inside ${inbox}`);
   }
-}
-
-async function appendRecords(
-  path: string,
-  records: readonly LogRecord[],
-  append: (path: string, data: string) => Promise<void>,
-): Promise<void> {
-  if (records.length === 0) {
-    return;
-  }
-  const lines = records.map((record) => JSON.stringify(record)).join("\n");
-  await append(path, `${lines}\n`);
-}
-
-async function fileSize(path: string): Promise<number | undefined> {
-  try {
-    return (await stat(path)).size;
-  } catch (error) {
-    if (isMissingPath(error)) {
-      return undefined;
-    }
-    throw error;
-  }
-}
-
-async function restoreFile(
-  path: string,
-  size: number | undefined,
-): Promise<void> {
-  if (size === undefined) {
-    try {
-      await unlink(path);
-    } catch (error) {
-      if (!isMissingPath(error)) {
-        throw error;
-      }
-    }
-    return;
-  }
-  await truncate(path, size);
-}
-
-function isMissingPath(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
-}
-
-async function readLog(root: string): Promise<LogRecord[]> {
-  const records: LogRecord[] = [];
-  for (const directory of ["documents", "observations", "judgements"]) {
-    const path = join(root, "data", directory);
-    const entries = await readdir(path, { withFileTypes: true });
-    const files = entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .sort((left, right) => left.name.localeCompare(right.name));
-
-    for (const file of files) {
-      const filePath = join(path, file.name);
-      const text = await readFile(filePath, "utf8");
-      records.push(...parseJsonLines(text, relative(root, filePath)));
-    }
-  }
-  return records;
 }
 
 const entryPoint = process.argv[1];

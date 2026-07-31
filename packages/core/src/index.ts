@@ -22,6 +22,7 @@ export {
 export type { EntityKind, ParsedEntityReference } from "./entity-reference.js";
 export { compareJudgementPrecedence } from "./judgement-precedence.js";
 export { sourceTrustProfiles } from "./source-trust.js";
+export { createProductionFoldRules, knownExtractorsFor } from "./rules.js";
 export type {
   Claim,
   Document,
@@ -36,17 +37,19 @@ export type {
   VerificationIssueCode,
   VerifyLogOptions,
 } from "./verify.js";
+export { hashBytes, hashText } from "./hashing.js";
+export { createUuidV7Generator } from "./uuid-v7.js";
 export {
-  createUuidV7Generator,
-  hashBytes,
-  hashText,
   ingestDraftSchema,
   prepareIngest,
   prepareReextraction,
   reextractionDraftSchema,
 } from "./ingest.js";
 export type { IngestDraft, ReextractionDraft } from "./ingest.js";
+export { commitIngest } from "./ingest-use-case.js";
+export type { IngestTransaction } from "./ingest-use-case.js";
 export { fold } from "./fold.js";
+export { selectReadings } from "./reading-selection.js";
 export type {
   Catalogue,
   Confidence,
@@ -55,7 +58,11 @@ export type {
   ProjectedEntity,
   ProjectedFact,
 } from "./fold.js";
-export { buildReviewQueue, normalizeVenueName } from "./matching.js";
+export {
+  buildReviewQueue,
+  buildReviewQueueFromWorkspace,
+  normalizeVenueName,
+} from "./matching.js";
 export type {
   EventPairCandidate,
   ProposalCandidate,
@@ -69,13 +76,20 @@ export {
   prepareReviewDecision,
 } from "./judgement.js";
 export type {
+  EventDecisionSide,
+  EventPairDecisionTarget,
+  ProposalDecisionTarget,
+} from "./decision-target.js";
+export type {
   JudgementDraft,
   ProposalDecision,
   ReviewedDecision,
 } from "./judgement.js";
 export {
   buildProposalCase,
+  buildProposalCaseFromWorkspace,
   buildReviewCase,
+  buildReviewCaseFromWorkspace,
   reviewCaseDocuments,
 } from "./review.js";
 export type {
@@ -85,3 +99,5 @@ export type {
   ReviewEvidence,
   ReviewSide,
 } from "./review.js";
+export { createReviewWorkspace } from "./review-workspace.js";
+export type { ReviewWorkspace } from "./review-workspace.js";

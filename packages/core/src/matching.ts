@@ -1,5 +1,4 @@
 import {
-  fold,
   type FoldOptions,
   type ProjectedEntity,
   type ProjectedFact,
@@ -7,6 +6,10 @@ import {
 import { parseEntityReference } from "./entity-reference.js";
 import { compareJudgementPrecedence } from "./judgement-precedence.js";
 import type { LogRecord } from "./records.js";
+import {
+  createReviewWorkspace,
+  type ReviewWorkspace,
+} from "./review-workspace.js";
 
 const millisecondsPerDay = 86_400_000;
 const isoDateLength = 10;
@@ -47,9 +50,15 @@ export function buildReviewQueue(
   records: readonly LogRecord[],
   options: FoldOptions,
 ): ReviewCandidate[] {
+  return buildReviewQueueFromWorkspace(createReviewWorkspace(records, options));
+}
+
+export function buildReviewQueueFromWorkspace(
+  workspace: ReviewWorkspace,
+): ReviewCandidate[] {
   return [
-    ...buildProposalQueue(records),
-    ...buildEventPairQueue(records, options),
+    ...buildProposalQueue(workspace.index.records),
+    ...buildEventPairQueue(workspace.catalogue.events, workspace.index.records),
   ];
 }
 
@@ -110,35 +119,24 @@ function buildProposalQueue(
 }
 
 function buildEventPairQueue(
+  events: readonly ProjectedEntity[],
   records: readonly LogRecord[],
-  options: FoldOptions,
 ): EventPairCandidate[] {
-  const catalogue = fold(records, options);
-  const candidates: EventPairCandidate[] = [];
-
-  for (let leftIndex = 0; leftIndex < catalogue.events.length; leftIndex += 1) {
-    const left = catalogue.events[leftIndex];
-    if (left === undefined) {
-      continue;
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const pairs = blockedEventPairs(events);
+  const candidates = [...pairs].flatMap((pair) => {
+    const [leftId, rightId] = pair.split("\u0000");
+    const left = leftId === undefined ? undefined : eventsById.get(leftId);
+    const right = rightId === undefined ? undefined : eventsById.get(rightId);
+    if (left === undefined || right === undefined) {
+      return [];
     }
-    for (
-      let rightIndex = leftIndex + 1;
-      rightIndex < catalogue.events.length;
-      rightIndex += 1
-    ) {
-      const right = catalogue.events[rightIndex];
-      if (right === undefined) {
-        continue;
-      }
-      const candidate = compareEvents(left, right);
-      if (
-        candidate !== undefined &&
-        !isSuppressed(candidate, left, right, records)
-      ) {
-        candidates.push(candidate);
-      }
-    }
-  }
+    const candidate = compareEvents(left, right);
+    return candidate === undefined ||
+      isSuppressed(candidate, left, right, records)
+      ? []
+      : [candidate];
+  });
 
   return candidates.toSorted(
     (left, right) =>
@@ -146,6 +144,85 @@ function buildEventPairQueue(
       right.impact - left.impact ||
       left.eventIds[0].localeCompare(right.eventIds[0]) ||
       left.eventIds[1].localeCompare(right.eventIds[1]),
+  );
+}
+
+function blockedEventPairs(events: readonly ProjectedEntity[]): Set<string> {
+  const byVenue = new Map<string, string[]>();
+  const byAct = new Map<string, string[]>();
+  const datedEvents: {
+    readonly event: ProjectedEntity;
+    readonly date: string;
+  }[] = [];
+
+  for (const event of events) {
+    const date = eventDate(event);
+    if (date === undefined) {
+      continue;
+    }
+    datedEvents.push({ event, date });
+    const venue = stringFact(event.facts["venue_name"]);
+    if (venue !== undefined) {
+      addToBlock(
+        byVenue,
+        `${date}\u0000${normalizeVenueName(venue)}`,
+        event.id,
+      );
+    }
+    for (const act of eventActs(event)) {
+      addToBlock(byAct, `${date}\u0000${act}`, event.id);
+    }
+  }
+
+  const pairs = new Set<string>();
+  for (const { event, date } of datedEvents) {
+    for (const nearbyDate of dateWindow(date)) {
+      const venue = stringFact(event.facts["venue_name"]);
+      if (venue !== undefined) {
+        addPairs(
+          pairs,
+          event.id,
+          byVenue.get(`${nearbyDate}\u0000${normalizeVenueName(venue)}`) ?? [],
+        );
+      }
+      for (const act of eventActs(event)) {
+        addPairs(pairs, event.id, byAct.get(`${nearbyDate}\u0000${act}`) ?? []);
+      }
+    }
+  }
+  return pairs;
+}
+
+function addToBlock(
+  blocks: Map<string, string[]>,
+  key: string,
+  eventId: string,
+): void {
+  const block = blocks.get(key) ?? [];
+  block.push(eventId);
+  blocks.set(key, block);
+}
+
+function addPairs(
+  pairs: Set<string>,
+  eventId: string,
+  relatedEventIds: readonly string[],
+): void {
+  for (const relatedId of relatedEventIds) {
+    if (eventId === relatedId) {
+      continue;
+    }
+    const [left, right] = [eventId, relatedId].toSorted();
+    pairs.add(`${left}\u0000${right}`);
+  }
+}
+
+function dateWindow(date: string): readonly string[] {
+  const day = Date.parse(`${date}T00:00:00Z`);
+  return [-1, 0, 1].map((offset) =>
+    new Date(day + offset * millisecondsPerDay)
+      .toISOString()
+      .slice(0, isoDateLength),
   );
 }
 

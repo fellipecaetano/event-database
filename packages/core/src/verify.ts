@@ -1,5 +1,6 @@
 import { parseEntityReference } from "./entity-reference.js";
-import { hashText } from "./ingest.js";
+import { documentMetadataSpans, observationClaimSpans } from "./grounding.js";
+import { hashText } from "./hashing.js";
 import {
   logRecordSchema,
   type Document,
@@ -340,21 +341,13 @@ function verifyObservationSpans(
   document: Document,
   issues: VerificationIssue[],
 ): void {
-  for (const [field, claim] of [
-    ...Object.entries(observation.claims),
-    ...Object.entries(observation.extras),
-  ]) {
-    if (claim === undefined) {
-      continue;
-    }
-    for (const span of claim.spans) {
-      if (!document.text.includes(span)) {
-        issues.push({
-          code: "ungrounded-span",
-          message: `${field} cites text absent from Document ${document.id}: ${JSON.stringify(span)}`,
-          recordId: observation.id,
-        });
-      }
+  for (const { field, span } of observationClaimSpans(observation)) {
+    if (!document.text.includes(span)) {
+      issues.push({
+        code: "ungrounded-span",
+        message: `${field} cites text absent from Document ${document.id}: ${JSON.stringify(span)}`,
+        recordId: observation.id,
+      });
     }
   }
 }
@@ -373,23 +366,13 @@ function verifyGroundedMetadataSpans(
   document: Extract<Document, { v: typeof groundedMetadataVersion }>,
   issues: VerificationIssue[],
 ): void {
-  const entries = [
-    { field: "source", metadata: document.source },
-    { field: "origin", metadata: document.origin },
-    { field: "published_at", metadata: document.published_at },
-  ];
-  for (const { field, metadata } of entries) {
-    if (metadata === undefined) {
-      continue;
-    }
-    for (const span of metadata.spans ?? []) {
-      if (!document.text.includes(span)) {
-        issues.push({
-          code: "ungrounded-span",
-          message: `document.${field} cites text absent from Document ${document.id}: ${JSON.stringify(span)}`,
-          recordId: document.id,
-        });
-      }
+  for (const { field, span } of documentMetadataSpans(document)) {
+    if (!document.text.includes(span)) {
+      issues.push({
+        code: "ungrounded-span",
+        message: `document.${field} cites text absent from Document ${document.id}: ${JSON.stringify(span)}`,
+        recordId: document.id,
+      });
     }
   }
 }

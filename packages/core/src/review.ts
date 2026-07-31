@@ -1,11 +1,14 @@
 import {
-  fold,
-  selectReadings,
   type FoldOptions,
   type FoldRules,
   type ProjectedEntity,
   type ProjectedFact,
 } from "./fold.js";
+import {
+  createReviewWorkspace,
+  type ReviewWorkspace,
+} from "./review-workspace.js";
+import { selectReadings } from "./reading-selection.js";
 import { parseEntityReference } from "./entity-reference.js";
 import {
   normalizeVenueName,
@@ -110,7 +113,17 @@ export function buildProposalCase(
   records: readonly LogRecord[],
   options: FoldOptions,
 ): ProposalCase {
-  const catalogue = fold(records, options);
+  return buildProposalCaseFromWorkspace(
+    candidate,
+    createReviewWorkspace(records, options),
+  );
+}
+
+export function buildProposalCaseFromWorkspace(
+  candidate: ProposalCandidate,
+  workspace: ReviewWorkspace,
+): ProposalCase {
+  const { catalogue } = workspace;
   const target = parseEntityReference(candidate.entity);
   const pool =
     target.kind === "venue"
@@ -149,17 +162,7 @@ export function buildProposalCase(
     );
   }
 
-  const observations = new Map(
-    records
-      .filter((record): record is Observation => record.type === "observation")
-      .map((observation) => [observation.id, observation]),
-  );
-  const documents = new Map(
-    records
-      .filter((record): record is Document => record.type === "document")
-      .map((document) => [document.id, document]),
-  );
-  const observation = observations.get(subjectId);
+  const observation = workspace.index.observationsById.get(subjectId);
   if (observation === undefined) {
     throw new Error(`buildProposalCase: missing Observation ${subjectId}`);
   }
@@ -176,7 +179,7 @@ export function buildProposalCase(
     evidence: [
       buildEvidence(
         observation,
-        documents,
+        workspace.index.documentsById,
         target.kind === "venue" ? comparedVenueFields : comparedEventFields,
       ),
     ],
@@ -219,38 +222,37 @@ export function buildReviewCase(
   records: readonly LogRecord[],
   options: FoldOptions,
 ): ReviewCase {
-  const catalogue = fold(records, options);
+  return buildReviewCaseFromWorkspace(
+    candidate,
+    createReviewWorkspace(records, options),
+  );
+}
+
+export function buildReviewCaseFromWorkspace(
+  candidate: EventPairCandidate,
+  workspace: ReviewWorkspace,
+): ReviewCase {
+  const { catalogue } = workspace;
   const [aId, bId] = candidate.eventIds;
   const a = findEvent(catalogue.events, aId);
   const b = findEvent(catalogue.events, bId);
-  const observationsById = new Map(
-    records
-      .filter((record): record is Observation => record.type === "observation")
-      .map((observation) => [observation.id, observation]),
-  );
-  const documents = new Map(
-    records
-      .filter((record): record is Document => record.type === "document")
-      .map((document) => [document.id, document]),
-  );
-
   return {
     kind: "event-pair",
     eventDate: candidate.eventDate,
     a: buildSide(
       "A",
       a,
-      observationsById,
-      documents,
-      options.rules,
+      workspace.index.observationsById,
+      workspace.index.documentsById,
+      workspace.options.rules,
       catalogue.venues,
     ),
     b: buildSide(
       "B",
       b,
-      observationsById,
-      documents,
-      options.rules,
+      workspace.index.observationsById,
+      workspace.index.documentsById,
+      workspace.options.rules,
       catalogue.venues,
     ),
   };

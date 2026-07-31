@@ -26,6 +26,7 @@ record rather than working around it.
   it pass, then refactor green.
 - Every bug fix starts with a failing regression test.
 - Test behavior and failure modes, not implementation details.
+- Every new executable source file gets direct tests; type-only files are covered by typecheck.
 
 ### Version Control
 
