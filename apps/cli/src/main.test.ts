@@ -496,6 +496,7 @@ describe("review command", () => {
     expect(output).toHaveLength(1);
     expect(JSON.parse(output[0] ?? "")).toEqual([
       {
+        kind: "event-pair",
         eventIds: [firstEventId, secondEventId],
         eventDate: "2026-07-30",
         impact: 2,

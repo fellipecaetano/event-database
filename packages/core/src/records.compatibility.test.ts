@@ -25,6 +25,9 @@ describe("existing log compatibility", () => {
     const results = records.map((record) => logRecordSchema.safeParse(record));
 
     expect(results.filter((result) => !result.success)).toEqual([]);
-    expect(results).toHaveLength(228);
+    // The log only ever grows, so an exact count would go red after every
+    // ingest or review session. This guards the case that matters: an empty
+    // read making the assertion above pass vacuously.
+    expect(results.length).toBeGreaterThan(0);
   });
 });

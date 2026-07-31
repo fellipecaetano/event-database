@@ -50,7 +50,63 @@ const id = {
   eventA: "019fa69b-63ea-7790-9ddb-9be94dac50a2",
   eventB: "019fa69b-63ea-7791-80d8-a4ff6f5ae0a1",
   eventC: "019fa69b-63ea-7792-93e2-9b0684b5f873",
+  documentVenue: "019fa69b-63ea-7793-8b1c-1e5a1c3f0a01",
+  venueA: "019fa69b-63ea-7794-9c2d-2f6b2d4e1b02",
+  venueB: "019fa69b-63ea-7795-a3ef-3a7c3e5f2c03",
+  observationVenueA: "019fa69b-63ea-7796-b4f0-4b8d4f602d04",
+  observationVenueB: "019fa69b-63ea-7797-8501-5c9e50713e05",
+  proposal: "019fa69b-63ea-7798-9612-6daf61824f06",
 };
+
+/** A Venue proposal standing in the log, plus the two Venues it spans. */
+function proposalRecords(): LogRecord[] {
+  const text = "Cine Joia CINE JOIA Praça Carlos Gomes, 82";
+  const venueObservation = (
+    observationId: string,
+    venueId: string,
+    name: string,
+  ): LogRecord =>
+    logRecordSchema.parse({
+      type: "observation",
+      id: observationId,
+      at: "2026-07-27T12:00:00Z",
+      v: 1,
+      document: id.documentVenue,
+      extractor: "tsv-parser@1",
+      subject: { kind: "venue", id: venueId },
+      claims: { venue_name: { value: name, spans: [name] } },
+      extras: {},
+    });
+  return [
+    logRecordSchema.parse({
+      type: "document",
+      id: id.documentVenue,
+      at: "2026-07-27T12:00:00Z",
+      v: 1,
+      source: "google-maps",
+      retrieved_at: "2026-07-27T12:00:00Z",
+      text_source: "retrieved",
+      artefact: "data/artefacts/google-maps.txt",
+      text_hash: hashText(text),
+      artefact_hash: "d".repeat(64),
+      text,
+    }),
+    venueObservation(id.observationVenueA, id.venueA, "Cine Joia"),
+    venueObservation(id.observationVenueB, id.venueB, "CINE JOIA"),
+    logRecordSchema.parse({
+      type: "match",
+      id: id.proposal,
+      at: "2026-07-27T13:00:00Z",
+      v: 1,
+      subject: { kind: "observation", id: id.observationVenueB },
+      entity: `venue:${id.venueA}`,
+      verdict: "same",
+      by: "matcher@1",
+      proposed: true,
+      reason: "raised by a confirmed Event merge",
+    }),
+  ];
+}
 
 interface EventFixture {
   readonly documentId: string;
@@ -164,6 +220,9 @@ async function makeRepository(
   };
   await write("documents", "document");
   await write("observations", "observation");
+  if (records.some((record) => record.type === "match")) {
+    await write("judgements", "match");
+  }
   return { root, records };
 }
 
@@ -814,5 +873,95 @@ describe("interactive review integration", () => {
         observationIds: [id.observationA, id.observationB],
       }),
     ]);
+  });
+});
+
+describe("interactive review of standing proposals", () => {
+  it("shows a proposal, what raised it, and both Venues", async () => {
+    const { root } = await makeRepository(0, proposalRecords());
+    const walk = session(["q"]);
+
+    await runCli(interactiveArguments(root), walk.dependencies);
+
+    const header = walk.transcript.find((line) => line.startsWith("Case "));
+    expect(header).toContain("proposal raised by matcher@1");
+    expect(walk.transcript.join("\n")).toContain(
+      "raised by a confirmed Event merge",
+    );
+    expect(lineIndex(walk.transcript, id.venueA)).toBeGreaterThan(-1);
+    expect(lineIndex(walk.transcript, id.venueB)).toBeGreaterThan(-1);
+    expect(lineIndex(walk.transcript, "[s] confirm")).toBeGreaterThan(-1);
+  });
+
+  it("never asks which side survives — the proposal names its direction", async () => {
+    const { root } = await makeRepository(0, proposalRecords());
+    const walk = session(["s", "one room, two spellings"]);
+
+    await runCli(interactiveArguments(root), walk.dependencies);
+
+    expect(lineIndex(walk.transcript, "Surviving")).toBe(-1);
+  });
+
+  it("confirming merges the Venue and clears the proposal from the queue", async () => {
+    const { root } = await makeRepository(0, proposalRecords());
+    const walk = session(["s", "one room, two spellings"]);
+
+    const exitCode = await runCli(
+      interactiveArguments(root),
+      walk.dependencies,
+    );
+
+    expect(exitCode).toBe(0);
+    const written = (await readJudgements(root)).filter(
+      (record) => record.id !== id.proposal,
+    );
+    expect(written).toEqual([
+      expect.objectContaining({
+        type: "match",
+        subject: { kind: "observation", id: id.observationVenueB },
+        entity: `venue:${id.venueA}`,
+        verdict: "same",
+        by: reviewer,
+        reason: "one room, two spellings",
+      }),
+      expect.objectContaining({
+        type: "redirect",
+        from: `venue:${id.venueB}`,
+        to: `venue:${id.venueA}`,
+      }),
+    ]);
+    for (const record of written) {
+      expect(record).not.toHaveProperty("proposed");
+    }
+  });
+
+  it("rejecting settles the proposal without merging anything", async () => {
+    const { root } = await makeRepository(0, proposalRecords());
+    const walk = session(["d", "two different rooms"]);
+
+    await runCli(interactiveArguments(root), walk.dependencies);
+
+    const written = (await readJudgements(root)).filter(
+      (record) => record.id !== id.proposal,
+    );
+    expect(written).toEqual([
+      expect.objectContaining({
+        type: "match",
+        subject: { kind: "observation", id: id.observationVenueB },
+        entity: `venue:${id.venueA}`,
+        verdict: "different",
+        reason: "two different rooms",
+      }),
+    ]);
+  });
+
+  it("leaves the log valid and the queue empty once answered", async () => {
+    const { root } = await makeRepository(0, proposalRecords());
+
+    await runCli(interactiveArguments(root), session(["d", ""]).dependencies);
+
+    const queue = session([]);
+    await runCli(["review", "--repository", root], queue.dependencies);
+    expect(JSON.parse(queue.transcript[0] ?? "[]")).toEqual([]);
   });
 });

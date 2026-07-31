@@ -53,27 +53,52 @@ queue as JSON for a machine to consume.
 without hand-writing Judgement drafts. It needs a terminal, and it needs to know who is
 deciding: pass `--by person:<id>` or answer the prompt it asks once at the start.
 
-Each case shows two Events side by side, labelled A and B, with the evidence behind them —
-title and line-up, date, start and showtime, venue, status, how many Observations back it,
-and each supporting Source with the claim spans it stated. It deliberately shows you no
+The queue holds two kinds of case, and standing proposals come first because confirming one
+teaches a Venue alias that makes the Event pairs behind it easier to settle.
+
+**Event pairs** show two Events side by side, labelled A and B, with the evidence behind
+them — title and line-up, date, start and showtime, venue, status, how many Observations back
+it, and each supporting Source with the claim spans it stated. They deliberately show you no
 score, no machine verdict, and no reason for the pairing; those are revealed only once your
 decision is recorded, so your judgements stay usable as ground truth.
 
-| Key | Meaning                                                             |
-| --- | ------------------------------------------------------------------- |
-| `s` | Same Event — asks which ID survives, then merges                    |
-| `d` | Different Events                                                    |
-| `f` | Defer until new evidence touches either side                        |
-| `k` | Skip for this session, writing nothing                              |
-| `v` | Show the complete retained Documents, then ask again                |
-| `q` | Stop cleanly                                                        |
+| Key | Meaning                                              |
+| --- | ---------------------------------------------------- |
+| `s` | Same Event — asks which ID survives, then merges      |
+| `d` | Different Events                                     |
+| `f` | Defer until new evidence touches either side         |
+| `k` | Skip for this session, writing nothing               |
+| `v` | Show the complete retained Documents, then ask again |
+| `q` | Stop cleanly                                         |
 
-`same`, `different`, and `deferred` may carry a short reason. Choosing `same` records a
-Match re-pointing every Observation under the losing Event onto the survivor, plus a Redirect
-retiring the losing ID. Each decision is verified against the whole log and appended before
-the next case, and the queue is rebuilt afterwards because a merge can invalidate later
-candidates. Quitting or interrupting keeps every completed case and writes nothing for the
-case in progress.
+Choosing `same` records a Match re-pointing every Observation under the losing Event onto the
+survivor, plus a Redirect retiring the losing ID. When the two sides sat at different Venues,
+it also raises a *proposal* that those Venues are one — never acting on the inference itself,
+because a single wrong Event merge would otherwise collapse two real rooms.
+
+**Proposals** are Matches the system raised but nobody vouched for. They carry no authority:
+neither the Fold nor the queue reads a record marked `proposed`, so a proposal changes nothing
+until a person answers it. Its case names what raised it — unlike an Event pair, a proposal is
+unintelligible without that — and shows both entities with the Source behind the one that
+would move.
+
+| Key | Meaning                                                     |
+| --- | ----------------------------------------------------------- |
+| `s` | Confirm — merges in the direction the proposal was raised    |
+| `d` | Reject                                                      |
+| `f` | Defer                                                       |
+| `k` | Skip for this session, writing nothing                      |
+| `v` | Show the complete retained Documents, then ask again         |
+| `q` | Stop cleanly                                                |
+
+A proposal names its own direction, so confirming one never asks which side survives. Every
+answer records a settled Match at the proposal's own subject and entity — that is what stops
+it being raised again — and confirming adds the Redirect retiring the entity it merged away.
+
+`same`, `different`, and `deferred` may carry a short reason. Each decision is verified
+against the whole log and appended before the next case, and the queue is rebuilt afterwards
+because a merge can invalidate later candidates. Quitting or interrupting keeps every
+completed case and writes nothing for the case in progress.
 
 For the structured ingestion procedure, read
 [the extraction skill](./skills/extract-document/SKILL.md).

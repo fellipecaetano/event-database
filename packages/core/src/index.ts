@@ -56,12 +56,32 @@ export type {
   ProjectedFact,
 } from "./fold.js";
 export { buildReviewQueue, normalizeVenueName } from "./matching.js";
-export type { ReviewCandidate, ReviewReason } from "./matching.js";
+export type {
+  EventPairCandidate,
+  ProposalCandidate,
+  ReviewCandidate,
+  ReviewReason,
+} from "./matching.js";
 export {
   judgementDraftSchema,
   prepareJudgement,
+  prepareProposalDecision,
   prepareReviewDecision,
 } from "./judgement.js";
-export type { JudgementDraft, ReviewedDecision } from "./judgement.js";
-export { buildReviewCase, reviewCaseDocuments } from "./review.js";
-export type { ReviewCase, ReviewEvidence, ReviewSide } from "./review.js";
+export type {
+  JudgementDraft,
+  ProposalDecision,
+  ReviewedDecision,
+} from "./judgement.js";
+export {
+  buildProposalCase,
+  buildReviewCase,
+  reviewCaseDocuments,
+} from "./review.js";
+export type {
+  ProposalCase,
+  ProposalSide,
+  ReviewCase,
+  ReviewEvidence,
+  ReviewSide,
+} from "./review.js";

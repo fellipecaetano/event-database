@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildProposalCase,
   buildReviewCase,
   buildReviewQueue,
   hashText,
   logRecordSchema,
   reviewCaseDocuments,
+  type EventPairCandidate,
   type FoldOptions,
   type FoldRules,
   type LogRecord,
-  type ReviewCandidate,
+  type ProposalCandidate,
 } from "./index.js";
 
 const id = {
@@ -22,6 +24,12 @@ const id = {
   observationListingsB: "019fa69b-63ea-7790-9ddb-9be94dac50a2",
   eventA: "019fa69b-63ea-7791-80d8-a4ff6f5ae0a1",
   eventB: "019fa69b-63ea-7792-93e2-9b0684b5f873",
+  documentVenue: "019fa69b-63ea-7793-8b1c-1e5a1c3f0a01",
+  venueA: "019fa69b-63ea-7794-9c2d-2f6b2d4e1b02",
+  venueB: "019fa69b-63ea-7795-a3ef-3a7c3e5f2c03",
+  observationVenueA: "019fa69b-63ea-7796-b4f0-4b8d4f602d04",
+  observationVenueB: "019fa69b-63ea-7797-8501-5c9e50713e05",
+  proposal: "019fa69b-63ea-7798-9612-6daf61824f06",
 };
 const rules: FoldRules = {
   version: "rules@1",
@@ -205,12 +213,73 @@ function sparseRecords(): LogRecord[] {
   ];
 }
 
-function candidateFor(records: readonly LogRecord[]): ReviewCandidate {
+function candidateFor(records: readonly LogRecord[]): EventPairCandidate {
   const [candidate] = buildReviewQueue(records, options);
-  if (candidate === undefined) {
-    throw new Error("the fixture produced no review candidate");
+  if (candidate?.kind !== "event-pair") {
+    throw new Error("the fixture produced no Event-pair candidate");
   }
   return candidate;
+}
+
+function proposalCandidateFor(
+  records: readonly LogRecord[],
+): ProposalCandidate {
+  const [candidate] = buildReviewQueue(records, options);
+  if (candidate?.kind !== "proposal") {
+    throw new Error("the fixture produced no proposal candidate");
+  }
+  return candidate;
+}
+
+function venueRecords(): LogRecord[] {
+  const venueText = "NIÁ Niá R. Conselheiro Ramalho, 161";
+  return [
+    logRecordSchema.parse({
+      type: "document",
+      id: id.documentVenue,
+      at: "2026-07-27T12:00:00Z",
+      v: 1,
+      source: "google-maps",
+      retrieved_at: "2026-07-27T12:00:00Z",
+      text_source: "retrieved",
+      artefact: "data/artefacts/venue.txt",
+      text_hash: hashText(venueText),
+      artefact_hash: "d".repeat(64),
+      text: venueText,
+    }),
+    venueObservation(id.observationVenueA, id.venueA, "NIÁ"),
+    venueObservation(id.observationVenueB, id.venueB, "Niá"),
+    logRecordSchema.parse({
+      type: "match",
+      id: id.proposal,
+      at: "2026-07-27T13:00:00Z",
+      v: 1,
+      subject: { kind: "observation", id: id.observationVenueB },
+      entity: `venue:${id.venueA}`,
+      verdict: "same",
+      by: "matcher@1",
+      proposed: true,
+      reason: "raised by a confirmed Event merge",
+    }),
+  ];
+}
+
+function venueObservation(
+  observationId: string,
+  venueId: string,
+  name: string,
+): LogRecord {
+  return logRecordSchema.parse({
+    type: "observation",
+    id: observationId,
+    at: "2026-07-27T12:00:00Z",
+    v: 1,
+    document: id.documentVenue,
+    extractor: "model@1",
+    subject: { kind: "venue", id: venueId },
+    claims: { venue_name: { value: name, spans: [name] } },
+    extras: {},
+  });
 }
 
 describe("buildReviewCase", () => {
@@ -348,6 +417,31 @@ describe("buildReviewCase", () => {
     }
   });
 
+  it("resolves each side's Venue so a merge can raise a Venue proposal", () => {
+    const [venueDocument] = venueRecords();
+    if (venueDocument === undefined) {
+      throw new Error("the fixture produced no Venue Document");
+    }
+    const records = [
+      ...pairRecords(),
+      venueDocument,
+      venueObservation(id.observationVenueA, id.venueA, "CINE JOIA"),
+    ];
+    const { a } = buildReviewCase(candidateFor(records), records, options);
+
+    expect(a.venue).toEqual({
+      id: id.venueA,
+      observationIds: [id.observationVenueA],
+    });
+  });
+
+  it("leaves the Venue absent when no Venue carries that name", () => {
+    const records = pairRecords();
+    const { a } = buildReviewCase(candidateFor(records), records, options);
+
+    expect(a).not.toHaveProperty("venue");
+  });
+
   it("refuses a candidate naming an Event the Fold does not hold", () => {
     const records = pairRecords();
     const candidate = candidateFor(records);
@@ -355,6 +449,84 @@ describe("buildReviewCase", () => {
     expect(() => buildReviewCase(candidate, [], options)).toThrow(
       /missing Event/u,
     );
+  });
+});
+
+describe("buildProposalCase", () => {
+  it("shows what the proposal would move and where it would go", () => {
+    const records = venueRecords();
+    const proposalCase = buildProposalCase(
+      proposalCandidateFor(records),
+      records,
+      options,
+    );
+
+    expect(proposalCase).toEqual(
+      expect.objectContaining({
+        matchId: id.proposal,
+        entity: `venue:${id.venueA}`,
+        raisedBy: "matcher@1",
+        reason: "raised by a confirmed Event merge",
+        from: {
+          id: id.venueB,
+          label: "Niá",
+          observationIds: [id.observationVenueB],
+        },
+        to: {
+          id: id.venueA,
+          label: "NIÁ",
+          observationIds: [id.observationVenueA],
+        },
+      }),
+    );
+  });
+
+  it("carries the Source behind the Observation it would move", () => {
+    const records = venueRecords();
+    const { evidence } = buildProposalCase(
+      proposalCandidateFor(records),
+      records,
+      options,
+    );
+
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        observationId: id.observationVenueB,
+        sourceName: "google-maps",
+        spans: ["Niá"],
+      }),
+    ]);
+  });
+
+  it("quotes the Spans a Venue is judged on, not the Event ones", () => {
+    const records = venueRecords().map((record) =>
+      record.type === "observation" && record.id === id.observationVenueB
+        ? logRecordSchema.parse({
+            ...record,
+            claims: {
+              ...record.claims,
+              address: {
+                value: "R. Conselheiro Ramalho, 161",
+                spans: ["R. Conselheiro Ramalho, 161"],
+              },
+            },
+          })
+        : record,
+    );
+    const { evidence } = buildProposalCase(
+      proposalCandidateFor(records),
+      records,
+      options,
+    );
+
+    expect(evidence[0]?.spans).toEqual(["Niá", "R. Conselheiro Ramalho, 161"]);
+  });
+
+  it("refuses a proposal naming an entity the Fold does not hold", () => {
+    const records = venueRecords();
+    const candidate = proposalCandidateFor(records);
+
+    expect(() => buildProposalCase(candidate, [], options)).toThrow(/missing/u);
   });
 });
 

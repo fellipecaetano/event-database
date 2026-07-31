@@ -17,6 +17,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   LogParseError,
+  buildProposalCase,
   buildReviewCase,
   buildReviewQueue,
   createUuidV7Generator,
@@ -26,6 +27,7 @@ import {
   parseJsonLines,
   prepareIngest,
   prepareJudgement,
+  prepareProposalDecision,
   prepareReextraction,
   prepareReviewDecision,
   reviewCaseDocuments,
@@ -35,6 +37,7 @@ import {
   type JudgementDraft,
   type FoldRules,
   type LogRecord,
+  type ProposalCase,
   type ReviewCandidate,
   type ReviewCase,
   type ReviewSide,
@@ -353,6 +356,8 @@ function isPersonReviewer(value: string): boolean {
 
 const reviewControls =
   "[s]ame  [d]ifferent  de[f]er  s[k]ip  [v]iew sources  [q]uit";
+const proposalControls =
+  "[s] confirm  [d] reject  de[f]er  s[k]ip  [v]iew sources  [q]uit";
 
 type ReviewVerdict = "same" | "different" | "deferred";
 
@@ -428,10 +433,11 @@ async function runInteractiveReview(
           break;
         }
 
-        const reviewCase = buildReviewCase(candidate, records, {
-          now: queueNow,
-          rules: foldRules,
-        });
+        const foldOptions = { now: queueNow, rules: foldRules };
+        const reviewCase =
+          candidate.kind === "proposal"
+            ? buildProposalCase(candidate, records, foldOptions)
+            : buildReviewCase(candidate, records, foldOptions);
         // Position is honest work done, not queue length: a skip still
         // advances it, so it doesn't read as "the queue is shrinking" while
         // the reviewer is actually making progress through it.
@@ -456,18 +462,33 @@ async function runInteractiveReview(
         }
 
         const decidedAt = new Date(dependencies.now()).toISOString();
-        const batch = prepareReviewDecision(
-          {
-            reviewCase,
-            verdict: outcome.verdict,
-            by: reviewer,
-            ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
-            ...(outcome.survivingEventId === undefined
-              ? {}
-              : { survivingEventId: outcome.survivingEventId }),
-          },
-          { at: decidedAt, nextId },
-        );
+        const batch =
+          reviewCase.kind === "proposal"
+            ? prepareProposalDecision(
+                {
+                  proposal: reviewCase,
+                  verdict: outcome.verdict,
+                  by: reviewer,
+                  ...(outcome.reason === undefined
+                    ? {}
+                    : { reason: outcome.reason }),
+                },
+                { at: decidedAt, nextId },
+              )
+            : prepareReviewDecision(
+                {
+                  reviewCase,
+                  verdict: outcome.verdict,
+                  by: reviewer,
+                  ...(outcome.reason === undefined
+                    ? {}
+                    : { reason: outcome.reason }),
+                  ...(outcome.survivingEventId === undefined
+                    ? {}
+                    : { survivingEventId: outcome.survivingEventId }),
+                },
+                { at: decidedAt, nextId },
+              );
         const verificationIssues = verifyLog([...records, ...batch], {
           knownExtractors,
         });
@@ -485,9 +506,14 @@ async function runInteractiveReview(
           dependencies.appendFile,
         );
         counts[outcome.verdict] += 1;
-        dependencies.writeOut(
-          `Matched because: ${candidate.reasons.join(", ")}`,
-        );
+        if (candidate.kind !== "proposal") {
+          // Withheld until now so the pairing reasons cannot steer the
+          // decision. A proposal has nothing left to reveal: what raised it
+          // was on screen from the start.
+          dependencies.writeOut(
+            `Matched because: ${candidate.reasons.join(", ")}`,
+          );
+        }
       }
     } catch (error) {
       // A reviewer who loses a session mid-way most needs to know what
@@ -504,7 +530,9 @@ async function runInteractiveReview(
 }
 
 function pairKey(candidate: ReviewCandidate): string {
-  return candidate.eventIds.toSorted().join(" ");
+  return candidate.kind === "proposal"
+    ? `proposal ${candidate.matchId}`
+    : candidate.eventIds.toSorted().join("\u0000");
 }
 
 async function askReviewer(terminal: TerminalIo): Promise<string | undefined> {
@@ -523,7 +551,7 @@ async function askReviewer(terminal: TerminalIo): Promise<string | undefined> {
 async function runDecisionLoop(
   terminal: TerminalIo,
   dependencies: CliDependencies,
-  reviewCase: ReviewCase,
+  reviewCase: ReviewCase | ProposalCase,
   records: readonly LogRecord[],
 ): Promise<DecisionOutcome> {
   for (;;) {
@@ -533,7 +561,7 @@ async function runDecisionLoop(
     }
     const control = answer.trim().toLowerCase();
     if (control === "v") {
-      for (const document of reviewCaseDocuments(reviewCase, records)) {
+      for (const document of caseDocuments(reviewCase, records)) {
         dependencies.writeOut(
           `${documentSourceName(document)}: ${document.text}`,
         );
@@ -559,7 +587,9 @@ async function runDecisionLoop(
     const trimmedReason = reasonAnswer.trim();
     const reason = trimmedReason.length > 0 ? trimmedReason : undefined;
 
-    if (verdict !== "same") {
+    // A proposal already names its direction: confirming it moves the subject
+    // onto the entity it was raised against, so there is no survivor to pick.
+    if (verdict !== "same" || reviewCase.kind === "proposal") {
       return { verdict, ...(reason === undefined ? {} : { reason }) };
     }
 
@@ -598,18 +628,87 @@ async function askSurvivor(
   }
 }
 
+function caseDocuments(
+  reviewCase: ReviewCase | ProposalCase,
+  records: readonly LogRecord[],
+): readonly Document[] {
+  if (reviewCase.kind !== "proposal") {
+    return reviewCaseDocuments(reviewCase, records);
+  }
+  const documents = new Map(
+    records
+      .filter((record): record is Document => record.type === "document")
+      .map((document) => [document.id, document]),
+  );
+  return [...new Set(reviewCase.evidence.map((item) => item.documentId))]
+    .sort((left, right) => left.localeCompare(right))
+    .flatMap((id) => {
+      const document = documents.get(id);
+      return document === undefined ? [] : [document];
+    });
+}
+
 function renderCase(
   dependencies: CliDependencies,
-  reviewCase: ReviewCase,
+  reviewCase: ReviewCase | ProposalCase,
   index: number,
   total: number,
 ): void {
+  if (reviewCase.kind === "proposal") {
+    renderProposal(dependencies, reviewCase, index, total);
+    return;
+  }
   dependencies.writeOut(
     `Case ${String(index)} of ${String(total)} — ${reviewCase.eventDate}`,
   );
   renderSide(dependencies, reviewCase.a);
   renderSide(dependencies, reviewCase.b);
   dependencies.writeOut(reviewControls);
+}
+
+function renderProposal(
+  dependencies: CliDependencies,
+  proposal: ProposalCase,
+  index: number,
+  total: number,
+): void {
+  // The reason is the machine's own, and it is shown: unlike an Event pair,
+  // a proposal is unintelligible without knowing what raised it.
+  dependencies.writeOut(
+    `Case ${String(index)} of ${String(total)} — proposal raised by ${proposal.raisedBy}`,
+  );
+  if (proposal.reason !== undefined) {
+    dependencies.writeOut(`  ${proposal.reason}`);
+  }
+  renderProposalSide(dependencies, "A", proposal.from, "would be merged away");
+  renderProposalSide(dependencies, "B", proposal.to, "would survive");
+  if (proposal.evidence.length > 0) {
+    dependencies.writeOut("  Sources:");
+    for (const evidence of proposal.evidence) {
+      dependencies.writeOut(
+        `    ${evidence.sourceName} · ${evidence.timeKind} ${evidence.time}`,
+      );
+      if (evidence.spans.length > 0) {
+        dependencies.writeOut(`      "${evidence.spans.join('" · "')}"`);
+      }
+    }
+  }
+  dependencies.writeOut(proposalControls);
+}
+
+function renderProposalSide(
+  dependencies: CliDependencies,
+  label: "A" | "B",
+  side: ProposalCase["from"],
+  role: string,
+): void {
+  const count = side.observationIds.length;
+  dependencies.writeOut(
+    `${label} — ${side.id}${side.label === undefined ? "" : ` (${side.label})`} — ${role}`,
+  );
+  dependencies.writeOut(
+    `  ${String(count)} ${count === 1 ? "Observation" : "Observations"}`,
+  );
 }
 
 function renderSide(dependencies: CliDependencies, side: ReviewSide): void {

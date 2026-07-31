@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  prepareProposalDecision,
   prepareReviewDecision,
   recordVersions,
+  type ProposalCase,
   type ReviewCase,
   type ReviewSide,
   type ReviewedDecision,
@@ -16,6 +18,11 @@ const id = {
   eventA: "019fa69b-63ea-7791-80d8-a4ff6f5ae0a1",
   eventB: "019fa69b-63ea-7792-93e2-9b0684b5f873",
   strangerEvent: "019fa69b-63ea-7793-8000-000000000000",
+  venueA: "019fa69b-63ea-7794-9c2d-2f6b2d4e1b02",
+  venueB: "019fa69b-63ea-7795-a3ef-3a7c3e5f2c03",
+  observationVenueA: "019fa69b-63ea-7796-b4f0-4b8d4f602d04",
+  observationVenueB: "019fa69b-63ea-7797-8501-5c9e50713e05",
+  proposal: "019fa69b-63ea-7798-9612-6daf61824f06",
 };
 const mintedIds = [
   "019fa69b-63ea-77a0-8000-000000000001",
@@ -35,6 +42,7 @@ function side(
 
 /** Side A holds two Observations, listed out of order on purpose. */
 const reviewCase: ReviewCase = {
+  kind: "event-pair",
   eventDate: "2026-07-30",
   a: side("A", id.eventA, [id.observationA2, id.observationA1]),
   b: side("B", id.eventB, [id.observationB2, id.observationB1]),
@@ -62,6 +70,21 @@ function context(): Context {
     minted: () => count,
   };
 }
+
+const proposalCase: ProposalCase = {
+  kind: "proposal",
+  matchId: id.proposal,
+  entity: `venue:${id.venueA}`,
+  subject: { kind: "observation", id: id.observationVenueB },
+  raisedBy: "matcher@1",
+  from: {
+    id: id.venueB,
+    label: "Niá",
+    observationIds: [id.observationVenueB],
+  },
+  to: { id: id.venueA, label: "NIÁ", observationIds: [id.observationVenueA] },
+  evidence: [],
+};
 
 function decide(overrides: Partial<ReviewedDecision>): ReviewedDecision {
   return {
@@ -216,5 +239,154 @@ describe("prepareReviewDecision", () => {
       error,
     );
     expect(emitted.minted()).toBe(0);
+  });
+});
+
+describe("prepareProposalDecision", () => {
+  it("confirms a proposal by moving every Observation and retiring the loser", () => {
+    const emitted = context();
+
+    expect(
+      prepareProposalDecision(
+        {
+          proposal: proposalCase,
+          verdict: "same",
+          by: "person:reviewer",
+          reason: "one room, two spellings",
+        },
+        emitted,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        type: "match",
+        v: recordVersions.match,
+        subject: { kind: "observation", id: id.observationVenueB },
+        entity: `venue:${id.venueA}`,
+        verdict: "same",
+        by: "person:reviewer",
+        reason: "one room, two spellings",
+      }),
+      expect.objectContaining({
+        type: "redirect",
+        from: `venue:${id.venueB}`,
+        to: `venue:${id.venueA}`,
+        reason: "one room, two spellings",
+      }),
+    ]);
+  });
+
+  it.each(["different", "deferred"] as const)(
+    "answers the proposal's own question with one settled %s Match",
+    (verdict) => {
+      const batch = prepareProposalDecision(
+        { proposal: proposalCase, verdict, by: "person:reviewer" },
+        context(),
+      );
+
+      expect(batch).toEqual([
+        expect.objectContaining({
+          type: "match",
+          subject: { kind: "observation", id: id.observationVenueB },
+          entity: `venue:${id.venueA}`,
+          verdict,
+          by: "person:reviewer",
+        }),
+      ]);
+    },
+  );
+
+  it("never marks its own answer as another proposal", () => {
+    const batch = prepareProposalDecision(
+      { proposal: proposalCase, verdict: "same", by: "person:reviewer" },
+      context(),
+    );
+
+    for (const record of batch) {
+      expect(record).not.toHaveProperty("proposed");
+    }
+  });
+
+  it("refuses an unattributed decision", () => {
+    expect(() =>
+      prepareProposalDecision(
+        { proposal: proposalCase, verdict: "same", by: "" },
+        context(),
+      ),
+    ).toThrow(/reviewer/u);
+  });
+});
+
+describe("prepareReviewDecision venue proposals", () => {
+  const sideWithVenue = (
+    label: "A" | "B",
+    eventId: string,
+    observationIds: readonly string[],
+    venue: { id: string; observationIds: readonly string[] },
+  ): ReviewSide => ({ ...side(label, eventId, observationIds), venue });
+
+  const merging = (): ReviewedDecision => ({
+    reviewCase: {
+      kind: "event-pair",
+      eventDate: "2026-07-30",
+      a: sideWithVenue("A", id.eventA, [id.observationA1], {
+        id: id.venueA,
+        observationIds: [id.observationVenueA],
+      }),
+      b: sideWithVenue("B", id.eventB, [id.observationB1], {
+        id: id.venueB,
+        observationIds: [id.observationVenueB],
+      }),
+    },
+    verdict: "same",
+    by: "person:reviewer",
+    survivingEventId: id.eventA,
+  });
+
+  it("raises a proposed Venue Match when the merged sides name two Venues", () => {
+    const batch = prepareReviewDecision(merging(), context());
+
+    expect(batch.at(-1)).toEqual(
+      expect.objectContaining({
+        type: "match",
+        subject: { kind: "observation", id: id.observationVenueB },
+        entity: `venue:${id.venueA}`,
+        verdict: "same",
+        proposed: true,
+      }),
+    );
+  });
+
+  it("raises nothing when both sides already sit at one Venue", () => {
+    const decision = merging();
+    const shared = { id: id.venueA, observationIds: [id.observationVenueA] };
+    const batch = prepareReviewDecision(
+      {
+        ...decision,
+        reviewCase: {
+          ...decision.reviewCase,
+          a: { ...decision.reviewCase.a, venue: shared },
+          b: { ...decision.reviewCase.b, venue: shared },
+        },
+      },
+      context(),
+    );
+
+    expect(batch.filter((record) => "proposed" in record)).toEqual([]);
+  });
+
+  it("raises nothing when a side has no Venue to speak of", () => {
+    const decision = merging();
+    const batch = prepareReviewDecision(
+      {
+        ...decision,
+        reviewCase: {
+          ...decision.reviewCase,
+          b: side("B", id.eventB, [id.observationB1]),
+        },
+      },
+      context(),
+    );
+
+    expect(batch.filter((record) => "proposed" in record)).toEqual([]);
   });
 });

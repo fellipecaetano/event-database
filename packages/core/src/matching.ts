@@ -17,19 +17,104 @@ type ObservationMatch = MatchRecord & {
 
 export type ReviewReason = "same-venue" | "shared-act";
 
-export interface ReviewCandidate {
+export interface EventPairCandidate {
+  readonly kind: "event-pair";
   readonly eventIds: readonly [string, string];
   readonly eventDate: string;
   readonly impact: number;
   readonly reasons: ReviewReason[];
 }
 
+/**
+ * A Match the system raised but nobody vouched for. It carries no authority —
+ * neither the Fold nor `isSuppressed` reads it — so it stays in the band until
+ * a person answers it with a settled Match at the same subject and entity.
+ */
+export interface ProposalCandidate {
+  readonly kind: "proposal";
+  readonly matchId: string;
+  readonly subject: MatchRecord["subject"];
+  readonly entity: string;
+  readonly verdict: MatchRecord["verdict"];
+  readonly raisedBy: string;
+  readonly at: string;
+  readonly reason?: string;
+}
+
+export type ReviewCandidate = EventPairCandidate | ProposalCandidate;
+
 export function buildReviewQueue(
   records: readonly LogRecord[],
   options: FoldOptions,
 ): ReviewCandidate[] {
+  return [
+    ...buildProposalQueue(records),
+    ...buildEventPairQueue(records, options),
+  ];
+}
+
+/** Stable key for the question a Match answers: this subject, this entity. */
+function matchKey(subject: MatchRecord["subject"], entity: string): string {
+  const subjectKey =
+    subject.kind === "observation"
+      ? `observation:${subject.id}`
+      : `venue-name:${subject.value}`;
+  return `${subjectKey}\u0000${entity}`;
+}
+
+function buildProposalQueue(
+  records: readonly LogRecord[],
+): ProposalCandidate[] {
+  const matches = records.filter(
+    (record): record is MatchRecord => record.type === "match",
+  );
+  const settled = new Set(
+    matches
+      .filter((match) => match.proposed !== true)
+      .map((match) => matchKey(match.subject, match.entity)),
+  );
+
+  // One question, one queue entry: a key raised twice keeps its strongest
+  // proposal rather than asking the reviewer the same thing twice.
+  const strongest = new Map<string, MatchRecord>();
+  for (const match of matches) {
+    if (match.proposed !== true) {
+      continue;
+    }
+    const key = matchKey(match.subject, match.entity);
+    if (settled.has(key)) {
+      continue;
+    }
+    const existing = strongest.get(key);
+    if (existing === undefined || compareDecisions(existing, match) < 0) {
+      strongest.set(key, match);
+    }
+  }
+
+  return [...strongest.values()]
+    .map((match) => ({
+      kind: "proposal" as const,
+      matchId: match.id,
+      subject: match.subject,
+      entity: match.entity,
+      verdict: match.verdict,
+      raisedBy: match.by,
+      at: match.at,
+      ...(match.reason === undefined ? {} : { reason: match.reason }),
+    }))
+    .toSorted(
+      (left, right) =>
+        left.at.localeCompare(right.at) ||
+        left.matchId.localeCompare(right.matchId),
+    );
+}
+
+function buildEventPairQueue(
+  records: readonly LogRecord[],
+  options: FoldOptions,
+): EventPairCandidate[] {
   const catalogue = fold(records, options);
-  const candidates: ReviewCandidate[] = [];
+  const candidates: EventPairCandidate[] = [];
 
   for (let leftIndex = 0; leftIndex < catalogue.events.length; leftIndex += 1) {
     const left = catalogue.events[leftIndex];
@@ -67,7 +152,7 @@ export function buildReviewQueue(
 function compareEvents(
   left: ProjectedEntity,
   right: ProjectedEntity,
-): ReviewCandidate | undefined {
+): EventPairCandidate | undefined {
   const leftDate = eventDate(left);
   const rightDate = eventDate(right);
   if (
@@ -104,6 +189,7 @@ function compareEvents(
       ? [left.id, right.id]
       : [right.id, left.id];
   return {
+    kind: "event-pair",
     eventIds,
     eventDate: leftDate.localeCompare(rightDate) <= 0 ? leftDate : rightDate,
     impact: left.observationIds.length + right.observationIds.length,
@@ -165,7 +251,7 @@ function eventActs(event: ProjectedEntity): Set<string> {
 }
 
 function isSuppressed(
-  candidate: ReviewCandidate,
+  candidate: EventPairCandidate,
   left: ProjectedEntity,
   right: ProjectedEntity,
   records: readonly LogRecord[],

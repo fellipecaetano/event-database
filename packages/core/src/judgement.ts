@@ -8,7 +8,8 @@ import {
   validationSchema,
   type Judgement,
 } from "./records.js";
-import type { ReviewCase, ReviewSide } from "./review.js";
+import { parseEntityReference } from "./entity-reference.js";
+import type { ProposalCase, ReviewCase, ReviewSide } from "./review.js";
 
 export const judgementDraftSchema = z.discriminatedUnion("type", [
   matchSchema.omit({ id: true, at: true, v: true }),
@@ -115,6 +116,84 @@ export function prepareReviewDecision(
   return [match];
 }
 
+export interface ProposalDecision {
+  readonly proposal: ProposalCase;
+  readonly verdict: "same" | "different" | "deferred";
+  /** `person:<id>` reviewer. */
+  readonly by: string;
+  readonly reason?: string;
+}
+
+/**
+ * Answers a standing proposal. Every branch emits a settled Match at the
+ * proposal's own subject and entity, which is what stops it being raised
+ * again — a proposal answered by anything but its own key would resurface.
+ */
+export function prepareProposalDecision(
+  decision: ProposalDecision,
+  context: ReviewDecisionContext,
+): Judgement[] {
+  const { proposal, verdict, by, reason } = decision;
+
+  if (by.length === 0) {
+    throw new Error(
+      "prepareProposalDecision: an unattributed decision needs a reviewer (by)",
+    );
+  }
+  if (reason?.length === 0) {
+    throw new Error(
+      "prepareProposalDecision: reason must not be empty when supplied",
+    );
+  }
+
+  if (verdict !== "same") {
+    return [
+      prepareJudgement(
+        {
+          type: "match",
+          subject: proposal.subject,
+          entity: proposal.entity,
+          verdict,
+          by,
+          ...(reason === undefined ? {} : { reason }),
+        },
+        { id: context.nextId(), at: context.at },
+      ),
+    ];
+  }
+
+  // Confirming runs in the direction the proposal was raised: everything under
+  // `from` moves onto the target, and `from` retires behind a Redirect.
+  const kind = parseEntityReference(proposal.entity).kind;
+  const matches = [...proposal.from.observationIds]
+    .toSorted((left, right) => left.localeCompare(right))
+    .map((observationId) =>
+      prepareJudgement(
+        {
+          type: "match",
+          subject: { kind: "observation", id: observationId },
+          entity: proposal.entity,
+          verdict: "same",
+          by,
+          ...(reason === undefined ? {} : { reason }),
+        },
+        { id: context.nextId(), at: context.at },
+      ),
+    );
+
+  const redirect = prepareJudgement(
+    {
+      type: "redirect",
+      from: `${kind}:${proposal.from.id}`,
+      to: proposal.entity,
+      reason: reason ?? "merged",
+    },
+    { id: context.nextId(), at: context.at },
+  );
+
+  return [...matches, redirect];
+}
+
 function prepareMerge(
   reviewCase: ReviewCase,
   by: string,
@@ -155,7 +234,49 @@ function prepareMerge(
     { id: context.nextId(), at: context.at },
   );
 
-  return [...matches, redirect];
+  return [
+    ...matches,
+    redirect,
+    ...raiseVenueProposal(survivor, loser, by, context),
+  ];
+}
+
+/**
+ * One Event at two Venues means the two Venues are one — but acting on that
+ * silently would let a single wrong Event merge quietly collapse two real
+ * rooms, so it is raised as a proposal and confirmed by a person.
+ */
+function raiseVenueProposal(
+  survivor: ReviewSide,
+  loser: ReviewSide,
+  by: string,
+  context: ReviewDecisionContext,
+): Judgement[] {
+  const target = survivor.venue;
+  const moving = loser.venue;
+  if (target === undefined || moving === undefined || target.id === moving.id) {
+    return [];
+  }
+  const [representative] = [...moving.observationIds].toSorted((left, right) =>
+    left.localeCompare(right),
+  );
+  if (representative === undefined) {
+    return [];
+  }
+  return [
+    prepareJudgement(
+      {
+        type: "match",
+        subject: { kind: "observation", id: representative },
+        entity: `venue:${target.id}`,
+        verdict: "same",
+        by,
+        proposed: true,
+        reason: `raised by confirming event:${survivor.eventId} and event:${loser.eventId} are one Event`,
+      },
+      { id: context.nextId(), at: context.at },
+    ),
+  ];
 }
 
 function resolveSides(
