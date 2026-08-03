@@ -9,6 +9,7 @@ import {
   LogParseError,
   buildProposalCaseFromWorkspace,
   buildReviewCaseFromWorkspace,
+  buildVenueReviewCaseFromWorkspace,
   buildReviewQueueFromWorkspace,
   commitIngest,
   createUuidV7Generator,
@@ -21,6 +22,7 @@ import {
   prepareProposalDecision,
   prepareReextraction,
   prepareReviewDecision,
+  prepareVenueReviewDecision,
   reviewCaseDocuments,
   createProductionFoldRules,
   verifyLog,
@@ -31,6 +33,8 @@ import {
   type ReviewCandidate,
   type ReviewCase,
   type ReviewSide,
+  type VenueReviewCase,
+  type VenueReviewSide,
 } from "@event-database/core";
 
 import { LocalCatalogueData } from "./catalogue-repository.js";
@@ -382,6 +386,7 @@ interface CompletedDecision {
   readonly verdict: ReviewVerdict;
   readonly reason?: string;
   readonly survivingEventId?: string;
+  readonly survivingVenueId?: string;
 }
 
 /** `undefined` marks EOF: stop the session without recording anything more. */
@@ -455,7 +460,9 @@ async function runInteractiveReview(
         const reviewCase =
           candidate.kind === "proposal"
             ? buildProposalCaseFromWorkspace(candidate, workspace)
-            : buildReviewCaseFromWorkspace(candidate, workspace);
+            : candidate.kind === "venue-pair"
+              ? buildVenueReviewCaseFromWorkspace(candidate, workspace)
+              : buildReviewCaseFromWorkspace(candidate, workspace);
         // Position is honest work done, not queue length: a skip still
         // advances it, so it doesn't read as "the queue is shrinking" while
         // the reviewer is actually making progress through it.
@@ -493,20 +500,35 @@ async function runInteractiveReview(
                 },
                 { at: decidedAt, nextId },
               )
-            : prepareReviewDecision(
-                {
-                  reviewCase,
-                  verdict: outcome.verdict,
-                  by: reviewer,
-                  ...(outcome.reason === undefined
-                    ? {}
-                    : { reason: outcome.reason }),
-                  ...(outcome.survivingEventId === undefined
-                    ? {}
-                    : { survivingEventId: outcome.survivingEventId }),
-                },
-                { at: decidedAt, nextId },
-              );
+            : reviewCase.kind === "venue-pair"
+              ? prepareVenueReviewDecision(
+                  {
+                    reviewCase,
+                    verdict: outcome.verdict,
+                    by: reviewer,
+                    ...(outcome.reason === undefined
+                      ? {}
+                      : { reason: outcome.reason }),
+                    ...(outcome.survivingVenueId === undefined
+                      ? {}
+                      : { survivingVenueId: outcome.survivingVenueId }),
+                  },
+                  { at: decidedAt, nextId },
+                )
+              : prepareReviewDecision(
+                  {
+                    reviewCase,
+                    verdict: outcome.verdict,
+                    by: reviewer,
+                    ...(outcome.reason === undefined
+                      ? {}
+                      : { reason: outcome.reason }),
+                    ...(outcome.survivingEventId === undefined
+                      ? {}
+                      : { survivingEventId: outcome.survivingEventId }),
+                  },
+                  { at: decidedAt, nextId },
+                );
         const verificationIssues = verifyLog([...records, ...batch], {
           knownExtractors,
         });
@@ -545,7 +567,9 @@ async function runInteractiveReview(
 function pairKey(candidate: ReviewCandidate): string {
   return candidate.kind === "proposal"
     ? `proposal ${candidate.matchId}`
-    : candidate.eventIds.toSorted().join("\u0000");
+    : candidate.kind === "venue-pair"
+      ? `venue ${candidate.venueIds.toSorted().join("\u0000")}`
+      : `event ${candidate.eventIds.toSorted().join("\u0000")}`;
 }
 
 async function askReviewer(terminal: TerminalIo): Promise<string | undefined> {
@@ -564,7 +588,7 @@ async function askReviewer(terminal: TerminalIo): Promise<string | undefined> {
 async function runDecisionLoop(
   terminal: TerminalIo,
   dependencies: CliDependencies,
-  reviewCase: ReviewCase | ProposalCase,
+  reviewCase: ReviewCase | VenueReviewCase | ProposalCase,
   records: readonly LogRecord[],
 ): Promise<DecisionOutcome> {
   for (;;) {
@@ -606,43 +630,58 @@ async function runDecisionLoop(
       return { verdict, ...(reason === undefined ? {} : { reason }) };
     }
 
-    const survivingEventId = await askSurvivor(terminal, reviewCase);
-    if (survivingEventId === undefined) {
+    const survivingEntityId = await askSurvivor(terminal, reviewCase);
+    if (survivingEntityId === undefined) {
       return undefined;
     }
-    return {
-      verdict,
-      survivingEventId,
-      ...(reason === undefined ? {} : { reason }),
-    };
+    return reviewCase.kind === "venue-pair"
+      ? {
+          verdict,
+          survivingVenueId: survivingEntityId,
+          ...(reason === undefined ? {} : { reason }),
+        }
+      : {
+          verdict,
+          survivingEventId: survivingEntityId,
+          ...(reason === undefined ? {} : { reason }),
+        };
   }
 }
 
 async function askSurvivor(
   terminal: TerminalIo,
-  reviewCase: ReviewCase,
+  reviewCase: ReviewCase | VenueReviewCase,
 ): Promise<string | undefined> {
+  const entityName = reviewCase.kind === "venue-pair" ? "Venue" : "Event";
+  const aId =
+    reviewCase.kind === "venue-pair"
+      ? reviewCase.a.venueId
+      : reviewCase.a.eventId;
+  const bId =
+    reviewCase.kind === "venue-pair"
+      ? reviewCase.b.venueId
+      : reviewCase.b.eventId;
   for (;;) {
     // A marked as suggested, but an explicit "a"/"b" keystroke is still
     // required — an empty answer must never be silently taken as A.
     const answer = await terminal.question(
-      `Surviving Event — [a] event:${reviewCase.a.eventId} (suggested) or [b] event:${reviewCase.b.eventId}: `,
+      `Surviving ${entityName} — [a] ${entityName.toLowerCase()}:${aId} (suggested) or [b] ${entityName.toLowerCase()}:${bId}: `,
     );
     if (answer === undefined) {
       return undefined;
     }
     const choice = answer.trim().toLowerCase();
     if (choice === "a") {
-      return reviewCase.a.eventId;
+      return aId;
     }
     if (choice === "b") {
-      return reviewCase.b.eventId;
+      return bId;
     }
   }
 }
 
 function caseDocuments(
-  reviewCase: ReviewCase | ProposalCase,
+  reviewCase: ReviewCase | VenueReviewCase | ProposalCase,
   records: readonly LogRecord[],
 ): readonly Document[] {
   if (reviewCase.kind !== "proposal") {
@@ -663,12 +702,19 @@ function caseDocuments(
 
 function renderCase(
   dependencies: CliDependencies,
-  reviewCase: ReviewCase | ProposalCase,
+  reviewCase: ReviewCase | VenueReviewCase | ProposalCase,
   index: number,
   total: number,
 ): void {
   if (reviewCase.kind === "proposal") {
     renderProposal(dependencies, reviewCase, index, total);
+    return;
+  }
+  if (reviewCase.kind === "venue-pair") {
+    dependencies.writeOut(`Case ${String(index)} of ${String(total)} — Venue`);
+    renderVenueSide(dependencies, reviewCase.a);
+    renderVenueSide(dependencies, reviewCase.b);
+    dependencies.writeOut(reviewControls);
     return;
   }
   dependencies.writeOut(
@@ -677,6 +723,35 @@ function renderCase(
   renderSide(dependencies, reviewCase.a);
   renderSide(dependencies, reviewCase.b);
   dependencies.writeOut(reviewControls);
+}
+
+function renderVenueSide(
+  dependencies: CliDependencies,
+  side: VenueReviewSide,
+): void {
+  const summary = [
+    side.venueName,
+    side.address,
+    side.neighbourhood,
+    side.city,
+  ].filter((part): part is string => part !== undefined);
+  dependencies.writeOut(
+    `${side.label} — venue:${side.venueId}${summary.length > 0 ? ` (${summary.join(" · ")})` : ""}`,
+  );
+  dependencies.writeOut(
+    `  ${String(side.observationIds.length)} ${side.observationIds.length === 1 ? "Observation" : "Observations"}`,
+  );
+  if (side.evidence.length > 0) {
+    dependencies.writeOut("  Sources:");
+    for (const evidence of side.evidence) {
+      dependencies.writeOut(
+        `    ${evidence.sourceName} · ${evidence.timeKind} ${evidence.time}`,
+      );
+      if (evidence.spans.length > 0) {
+        dependencies.writeOut(`      "${evidence.spans.join('" · "')}"`);
+      }
+    }
+  }
 }
 
 function renderProposal(

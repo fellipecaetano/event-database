@@ -4,6 +4,7 @@ import {
   buildProposalCase,
   buildReviewCase,
   buildReviewQueue,
+  buildVenueReviewCase,
   hashText,
   logRecordSchema,
   reviewCaseDocuments,
@@ -12,6 +13,7 @@ import {
   type FoldRules,
   type LogRecord,
   type ProposalCandidate,
+  type VenuePairCandidate,
 } from "./index.js";
 
 const id = {
@@ -227,6 +229,14 @@ function proposalCandidateFor(
   const [candidate] = buildReviewQueue(records, options);
   if (candidate?.kind !== "proposal") {
     throw new Error("the fixture produced no proposal candidate");
+  }
+  return candidate;
+}
+
+function venueCandidateFor(records: readonly LogRecord[]): VenuePairCandidate {
+  const [candidate] = buildReviewQueue(records, options);
+  if (candidate?.kind !== "venue-pair") {
+    throw new Error("the fixture produced no Venue candidate");
   }
   return candidate;
 }
@@ -449,6 +459,33 @@ describe("buildReviewCase", () => {
     expect(() => buildReviewCase(candidate, [], options)).toThrow(
       /missing Event/u,
     );
+  });
+});
+
+describe("buildVenueReviewCase", () => {
+  it("shows both Venue entities and their source evidence", () => {
+    const records = venueRecords().slice(0, 3);
+    const reviewCase = buildVenueReviewCase(
+      venueCandidateFor(records),
+      records,
+      options,
+    );
+
+    expect(reviewCase.kind).toBe("venue-pair");
+    expect(reviewCase.a).toMatchObject({
+      label: "A",
+      venueId: id.venueA,
+      venueName: "NIÁ",
+      observationIds: [id.observationVenueA],
+    });
+    expect(reviewCase.b).toMatchObject({
+      label: "B",
+      venueId: id.venueB,
+      venueName: "Niá",
+      observationIds: [id.observationVenueB],
+    });
+    expect(reviewCase.a.evidence[0]?.sourceName).toBe("google-maps");
+    expect(reviewCase.b.evidence[0]?.sourceName).toBe("google-maps");
   });
 });
 

@@ -388,6 +388,12 @@ under **[Still open](#still-open)** at the end.
       70 names are short and generic. On the first week of real data this resolves 78 venue
       observations to 70 Venues with no queue at all.
 
+      The implemented review workflow is deliberately more conservative than this planned
+      auto-link: equal normalised names become Venue-pair candidates, pairs with conflicting
+      stated cities are rejected before review, and no candidate changes identity until a
+      reviewer confirms it. A confirmation re-points all losing Venue Observations and records
+      a Redirect, so the Fold produces one Venue while retaining every reading.
+
       Note the evidence is lopsided and will stay that way: address appeared on 2 of 78 venue
       observations, neighbourhood on 75. Venue matching is name plus neighbourhood in practice.
 - [x] **How the matcher compares who is playing.** By normalising `title` and `lineup` into a

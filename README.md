@@ -79,8 +79,14 @@ stack output.
 without hand-writing Judgement drafts. It needs a terminal, and it needs to know who is
 deciding: pass `--by person:<id>` or answer the prompt it asks once at the start.
 
-The queue holds two kinds of case, and standing proposals come first because confirming one
-teaches a Venue alias that makes the Event pairs behind it easier to settle.
+The queue holds three kinds of case. Standing proposals come first, then Venue pairs, then
+Event pairs, so identity decisions that can simplify later cases are settled first.
+
+**Venue pairs** have the same controls as Event pairs. They show each Venue's name, address,
+neighbourhood, city, and supporting Sources. Choosing `same` asks which Venue ID survives,
+re-points every Observation from the other Venue, and records a Redirect. Candidate generation
+requires the same normalized name and rejects pairs whose stated cities conflict; matching
+addresses are shown as an additional reason after the decision is recorded.
 
 **Event pairs** show two Events side by side, labelled A and B, with the evidence behind
 them — title and line-up, date, start and showtime, venue, status, how many Observations back
@@ -97,7 +103,7 @@ decision is recorded, so your judgements stay usable as ground truth.
 | `v` | Show the complete retained Documents, then ask again |
 | `q` | Stop cleanly                                         |
 
-Choosing `same` records a Match re-pointing every Observation under the losing Event onto the
+For Event pairs, choosing `same` records a Match re-pointing every Observation under the losing Event onto the
 survivor, plus a Redirect retiring the losing ID. When the two sides sat at different Venues,
 it also raises a *proposal* that those Venues are one — never acting on the inference itself,
 because a single wrong Event merge would otherwise collapse two real rooms.

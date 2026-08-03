@@ -14,6 +14,7 @@ import {
   normalizeVenueName,
   type EventPairCandidate,
   type ProposalCandidate,
+  type VenuePairCandidate,
 } from "./matching.js";
 import {
   documentSourceName,
@@ -62,6 +63,23 @@ export interface ReviewCase {
   readonly b: ReviewSide;
 }
 
+export interface VenueReviewSide {
+  readonly label: "A" | "B";
+  readonly venueId: string;
+  readonly observationIds: readonly string[];
+  readonly venueName?: string;
+  readonly city?: string;
+  readonly address?: string;
+  readonly neighbourhood?: string;
+  readonly evidence: readonly ReviewEvidence[];
+}
+
+export interface VenueReviewCase {
+  readonly kind: "venue-pair";
+  readonly a: VenueReviewSide;
+  readonly b: VenueReviewSide;
+}
+
 /**
  * Fold-settled fact fields a reviewer is shown. Excludes fields (genre_words,
  * price_from, ticket_url, ...) that are not compared on the review screen, so
@@ -80,7 +98,12 @@ const comparedEventFields = [
 ] as const;
 
 /** What a Venue is judged on. An Event's fields say nothing about a room. */
-const comparedVenueFields = ["venue_name", "address", "city"] as const;
+const comparedVenueFields = [
+  "venue_name",
+  "address",
+  "city",
+  "neighbourhood",
+] as const;
 
 /** One side of a proposal: an entity, the name it goes by, and its evidence. */
 export interface ProposalSide {
@@ -258,9 +281,78 @@ export function buildReviewCaseFromWorkspace(
   };
 }
 
+export function buildVenueReviewCase(
+  candidate: VenuePairCandidate,
+  records: readonly LogRecord[],
+  options: FoldOptions,
+): VenueReviewCase {
+  return buildVenueReviewCaseFromWorkspace(
+    candidate,
+    createReviewWorkspace(records, options),
+  );
+}
+
+export function buildVenueReviewCaseFromWorkspace(
+  candidate: VenuePairCandidate,
+  workspace: ReviewWorkspace,
+): VenueReviewCase {
+  const [aId, bId] = candidate.venueIds;
+  const findVenue = (venueId: string): ProjectedEntity => {
+    const venue = workspace.catalogue.venues.find(
+      (candidateVenue) => candidateVenue.id === venueId,
+    );
+    if (venue === undefined) {
+      throw new Error(`buildVenueReviewCase: missing venue:${venueId}`);
+    }
+    return venue;
+  };
+  return {
+    kind: "venue-pair",
+    a: buildVenueSide("A", findVenue(aId), workspace),
+    b: buildVenueSide("B", findVenue(bId), workspace),
+  };
+}
+
+function buildVenueSide(
+  label: "A" | "B",
+  venue: ProjectedEntity,
+  workspace: ReviewWorkspace,
+): VenueReviewSide {
+  const groupedObservations = venue.observationIds.map((observationId) =>
+    lookUpObservation(observationId, workspace.index.observationsById),
+  );
+  const evidence = selectReadings(
+    groupedObservations,
+    workspace.index.observationsById,
+    workspace.options.rules,
+  )
+    .toSorted((left, right) => left.id.localeCompare(right.id))
+    .map((observation) =>
+      buildEvidence(
+        observation,
+        workspace.index.documentsById,
+        comparedVenueFields,
+      ),
+    );
+  const venueName = factString(venue.facts["venue_name"]);
+  const city = factString(venue.facts["city"]);
+  const address = factString(venue.facts["address"]);
+  const neighbourhood = factString(venue.facts["neighbourhood"]);
+  return {
+    label,
+    venueId: venue.id,
+    observationIds: venue.observationIds,
+    ...(venueName === undefined ? {} : { venueName }),
+    ...(city === undefined ? {} : { city }),
+    ...(address === undefined ? {} : { address }),
+    ...(neighbourhood === undefined ? {} : { neighbourhood }),
+    evidence,
+  };
+}
+
 /** Full retained Documents behind a case, deterministic order, deduplicated. */
 export function reviewCaseDocuments(
-  reviewCase: ReviewCase,
+  reviewCase: ReviewCase | VenueReviewCase,
   records: readonly LogRecord[],
 ): readonly Document[] {
   const documents = new Map(

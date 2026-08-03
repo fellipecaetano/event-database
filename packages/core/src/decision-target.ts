@@ -21,6 +21,17 @@ export interface EventPairDecisionTarget {
   readonly b: EventDecisionSide;
 }
 
+export interface VenueDecisionSide {
+  readonly venueId: string;
+  readonly observationIds: readonly string[];
+}
+
+export interface VenuePairDecisionTarget {
+  readonly kind: "venue-pair";
+  readonly a: VenueDecisionSide;
+  readonly b: VenueDecisionSide;
+}
+
 export interface ProposalDecisionTarget {
   readonly subject: MatchRecord["subject"];
   readonly entity: string;

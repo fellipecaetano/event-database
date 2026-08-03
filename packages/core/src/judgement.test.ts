@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   prepareProposalDecision,
   prepareReviewDecision,
+  prepareVenueReviewDecision,
   recordVersions,
   type ProposalCase,
   type ReviewCase,
   type ReviewSide,
   type ReviewedDecision,
+  type VenueReviewCase,
 } from "./index.js";
 
 const id = {
@@ -85,6 +87,78 @@ const proposalCase: ProposalCase = {
   to: { id: id.venueA, label: "NIÁ", observationIds: [id.observationVenueA] },
   evidence: [],
 };
+
+const venueReviewCase: VenueReviewCase = {
+  kind: "venue-pair",
+  a: {
+    label: "A",
+    venueId: id.venueA,
+    observationIds: [id.observationVenueA],
+    evidence: [],
+  },
+  b: {
+    label: "B",
+    venueId: id.venueB,
+    observationIds: [id.observationVenueB],
+    evidence: [],
+  },
+};
+
+describe("prepareVenueReviewDecision", () => {
+  it("re-points the losing Venue and records its Redirect", () => {
+    expect(
+      prepareVenueReviewDecision(
+        {
+          reviewCase: venueReviewCase,
+          verdict: "same",
+          by: "person:reviewer",
+          survivingVenueId: id.venueA,
+        },
+        context(),
+      ),
+    ).toStrictEqual([
+      {
+        type: "match",
+        id: mintedIds[0],
+        at,
+        v: recordVersions.match,
+        subject: { kind: "observation", id: id.observationVenueB },
+        entity: `venue:${id.venueA}`,
+        verdict: "same",
+        by: "person:reviewer",
+      },
+      {
+        type: "redirect",
+        id: mintedIds[1],
+        at,
+        v: recordVersions.redirect,
+        from: `venue:${id.venueB}`,
+        to: `venue:${id.venueA}`,
+        reason: "merged",
+      },
+    ]);
+  });
+
+  it("records a rejected Venue pair without merging", () => {
+    expect(
+      prepareVenueReviewDecision(
+        {
+          reviewCase: venueReviewCase,
+          verdict: "different",
+          by: "person:reviewer",
+        },
+        context(),
+      ),
+    ).toStrictEqual([
+      expect.objectContaining({
+        type: "match",
+        subject: { kind: "observation", id: id.observationVenueA },
+        entity: `venue:${id.venueB}`,
+        verdict: "different",
+      }),
+    ]);
+  });
+});
 
 function decide(overrides: Partial<ReviewedDecision>): ReviewedDecision {
   return {

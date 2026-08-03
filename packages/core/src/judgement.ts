@@ -13,6 +13,7 @@ import type {
   EventDecisionSide,
   EventPairDecisionTarget,
   ProposalDecisionTarget,
+  VenuePairDecisionTarget,
 } from "./decision-target.js";
 
 export const judgementDraftSchema = z.discriminatedUnion("type", [
@@ -126,6 +127,110 @@ export interface ProposalDecision {
   /** `person:<id>` reviewer. */
   readonly by: string;
   readonly reason?: string;
+}
+
+export interface VenueReviewedDecision {
+  readonly reviewCase: VenuePairDecisionTarget;
+  readonly verdict: "same" | "different" | "deferred";
+  readonly by: string;
+  readonly reason?: string;
+  readonly survivingVenueId?: string;
+}
+
+export function prepareVenueReviewDecision(
+  decision: VenueReviewedDecision,
+  context: ReviewDecisionContext,
+): Judgement[] {
+  const { reviewCase, verdict, by, reason, survivingVenueId } = decision;
+  if (by.length === 0) {
+    throw new Error(
+      "prepareVenueReviewDecision: an unattributed decision needs a reviewer (by)",
+    );
+  }
+  if (reason?.length === 0) {
+    throw new Error(
+      "prepareVenueReviewDecision: reason must not be empty when supplied",
+    );
+  }
+  if (verdict !== "same") {
+    if (survivingVenueId !== undefined) {
+      throw new Error(
+        `prepareVenueReviewDecision: survivingVenueId is not allowed for a ${verdict} verdict`,
+      );
+    }
+    return [
+      prepareJudgement(
+        {
+          type: "match",
+          subject: {
+            kind: "observation",
+            id: representativeVenueObservationId(reviewCase.a),
+          },
+          entity: `venue:${reviewCase.b.venueId}`,
+          verdict,
+          by,
+          ...(reason === undefined ? {} : { reason }),
+        },
+        { id: context.nextId(), at: context.at },
+      ),
+    ];
+  }
+  if (survivingVenueId === undefined) {
+    throw new Error(
+      "prepareVenueReviewDecision: a same verdict requires a survivingVenueId",
+    );
+  }
+  const survivor =
+    reviewCase.a.venueId === survivingVenueId
+      ? reviewCase.a
+      : reviewCase.b.venueId === survivingVenueId
+        ? reviewCase.b
+        : undefined;
+  if (survivor === undefined) {
+    throw new Error(
+      `prepareVenueReviewDecision: survivingVenueId ${survivingVenueId} is not part of this case`,
+    );
+  }
+  const loser = survivor === reviewCase.a ? reviewCase.b : reviewCase.a;
+  const matches = [...loser.observationIds]
+    .toSorted((left, right) => left.localeCompare(right))
+    .map((observationId) =>
+      prepareJudgement(
+        {
+          type: "match",
+          subject: { kind: "observation", id: observationId },
+          entity: `venue:${survivor.venueId}`,
+          verdict: "same",
+          by,
+          ...(reason === undefined ? {} : { reason }),
+        },
+        { id: context.nextId(), at: context.at },
+      ),
+    );
+  return [
+    ...matches,
+    prepareJudgement(
+      {
+        type: "redirect",
+        from: `venue:${loser.venueId}`,
+        to: `venue:${survivor.venueId}`,
+        reason: reason ?? "merged",
+      },
+      { id: context.nextId(), at: context.at },
+    ),
+  ];
+}
+
+function representativeVenueObservationId(
+  side: VenuePairDecisionTarget["a"],
+): string {
+  const [representative] = [...side.observationIds].toSorted((left, right) =>
+    left.localeCompare(right),
+  );
+  if (representative === undefined) {
+    throw new Error("prepareVenueReviewDecision: side has no Observations");
+  }
+  return representative;
 }
 
 /**

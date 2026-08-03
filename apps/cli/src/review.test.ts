@@ -586,6 +586,31 @@ describe("interactive review presentation", () => {
 });
 
 describe("interactive review decisions", () => {
+  it("shows and merges a direct Venue pair", async () => {
+    const { root } = await makeRepository(0, proposalRecords().slice(0, 3));
+    const { transcript, dependencies } = session(["s", "", "a"]);
+
+    expect(await runCli(interactiveArguments(root), dependencies)).toBe(0);
+
+    const shown = transcript.join("\n");
+    expect(shown).toContain(`A — venue:${id.venueA}`);
+    expect(shown).toContain(`B — venue:${id.venueB}`);
+    expect(shown).toContain("Surviving Venue");
+    expect(await readJudgements(root)).toEqual([
+      expect.objectContaining({
+        type: "match",
+        subject: { kind: "observation", id: id.observationVenueB },
+        entity: `venue:${id.venueA}`,
+        verdict: "same",
+      }),
+      expect.objectContaining({
+        type: "redirect",
+        from: `venue:${id.venueB}`,
+        to: `venue:${id.venueA}`,
+      }),
+    ]);
+  });
+
   it.each(["different", "deferred"] as const)(
     "records one %s Match against the pair",
     async (verdict) => {

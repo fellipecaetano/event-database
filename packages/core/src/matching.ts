@@ -5,6 +5,7 @@ import {
 } from "./fold.js";
 import { parseEntityReference } from "./entity-reference.js";
 import { compareJudgementPrecedence } from "./judgement-precedence.js";
+import { buildRedirects, resolveRedirect } from "./identity-resolution.js";
 import type { LogRecord } from "./records.js";
 import {
   createReviewWorkspace,
@@ -19,6 +20,7 @@ type ObservationMatch = MatchRecord & {
 };
 
 export type ReviewReason = "same-venue" | "shared-act";
+export type VenueReviewReason = "same-name" | "same-address";
 
 export interface EventPairCandidate {
   readonly kind: "event-pair";
@@ -26,6 +28,13 @@ export interface EventPairCandidate {
   readonly eventDate: string;
   readonly impact: number;
   readonly reasons: ReviewReason[];
+}
+
+export interface VenuePairCandidate {
+  readonly kind: "venue-pair";
+  readonly venueIds: readonly [string, string];
+  readonly impact: number;
+  readonly reasons: VenueReviewReason[];
 }
 
 /**
@@ -44,7 +53,8 @@ export interface ProposalCandidate {
   readonly reason?: string;
 }
 
-export type ReviewCandidate = EventPairCandidate | ProposalCandidate;
+export type ReviewCandidate =
+  EventPairCandidate | VenuePairCandidate | ProposalCandidate;
 
 export function buildReviewQueue(
   records: readonly LogRecord[],
@@ -56,10 +66,136 @@ export function buildReviewQueue(
 export function buildReviewQueueFromWorkspace(
   workspace: ReviewWorkspace,
 ): ReviewCandidate[] {
+  const redirects = buildRedirects(workspace.index);
+  const proposals = buildProposalQueue(
+    workspace.index.records,
+    workspace.catalogue.events,
+    workspace.catalogue.venues,
+    redirects,
+  );
   return [
-    ...buildProposalQueue(workspace.index.records),
-    ...buildEventPairQueue(workspace.catalogue.events, workspace.index.records),
+    ...proposals,
+    ...buildVenuePairQueue(
+      workspace.catalogue.venues,
+      workspace.index.records,
+      proposals,
+      redirects,
+    ),
+    ...buildEventPairQueue(
+      workspace.catalogue.events,
+      workspace.index.records,
+      redirects,
+    ),
   ];
+}
+
+function buildVenuePairQueue(
+  venues: readonly ProjectedEntity[],
+  records: readonly LogRecord[],
+  proposals: readonly ProposalCandidate[],
+  redirects: ReadonlyMap<string, string>,
+): VenuePairCandidate[] {
+  const byName = new Map<string, string[]>();
+  for (const venue of venues) {
+    const name = stringFact(venue.facts["venue_name"]);
+    if (name !== undefined) {
+      addToBlock(byName, normalizeVenueName(name), venue.id);
+    }
+  }
+
+  const venuesById = new Map(venues.map((venue) => [venue.id, venue]));
+  const pairs = new Set<string>();
+  for (const ids of byName.values()) {
+    for (const id of ids) {
+      addPairs(pairs, id, ids);
+    }
+  }
+  const proposedPairs = venueProposalPairs(venues, proposals);
+  return [...pairs]
+    .flatMap((pair) => {
+      if (proposedPairs.has(pair)) {
+        return [];
+      }
+      const [leftId, rightId] = pair.split("\u0000");
+      const left = leftId === undefined ? undefined : venuesById.get(leftId);
+      const right = rightId === undefined ? undefined : venuesById.get(rightId);
+      if (
+        left === undefined ||
+        right === undefined ||
+        venuesConflictByCity(left, right) ||
+        isSuppressedPair(
+          "venue",
+          [left.id, right.id],
+          left,
+          right,
+          records,
+          redirects,
+        )
+      ) {
+        return [];
+      }
+      const reasons: VenueReviewReason[] = ["same-name"];
+      const leftAddress = stringFact(left.facts["address"]);
+      const rightAddress = stringFact(right.facts["address"]);
+      if (
+        leftAddress !== undefined &&
+        rightAddress !== undefined &&
+        normalizeText(leftAddress) === normalizeText(rightAddress)
+      ) {
+        reasons.push("same-address");
+      }
+      return [
+        {
+          kind: "venue-pair" as const,
+          venueIds: [left.id, right.id] as const,
+          impact: left.observationIds.length + right.observationIds.length,
+          reasons,
+        },
+      ];
+    })
+    .toSorted(
+      (left, right) =>
+        right.impact - left.impact ||
+        left.venueIds[0].localeCompare(right.venueIds[0]) ||
+        left.venueIds[1].localeCompare(right.venueIds[1]),
+    );
+}
+
+function venuesConflictByCity(
+  left: ProjectedEntity,
+  right: ProjectedEntity,
+): boolean {
+  const leftCity = stringFact(left.facts["city"]);
+  const rightCity = stringFact(right.facts["city"]);
+  return (
+    leftCity !== undefined &&
+    rightCity !== undefined &&
+    normalizeText(leftCity) !== normalizeText(rightCity)
+  );
+}
+
+function venueProposalPairs(
+  venues: readonly ProjectedEntity[],
+  proposals: readonly ProposalCandidate[],
+): Set<string> {
+  const observationToVenue = new Map<string, string>();
+  for (const venue of venues) {
+    for (const observationId of venue.observationIds) {
+      observationToVenue.set(observationId, venue.id);
+    }
+  }
+  const pairs = new Set<string>();
+  for (const proposal of proposals) {
+    if (proposal.subject.kind !== "observation") {
+      continue;
+    }
+    const from = observationToVenue.get(proposal.subject.id);
+    const target = parseEntityReference(proposal.entity);
+    if (from !== undefined && target.kind === "venue" && from !== target.id) {
+      pairs.add([from, target.id].toSorted().join("\u0000"));
+    }
+  }
+  return pairs;
 }
 
 /** Stable key for the question a Match answers: this subject, this entity. */
@@ -73,6 +209,9 @@ function matchKey(subject: MatchRecord["subject"], entity: string): string {
 
 function buildProposalQueue(
   records: readonly LogRecord[],
+  events: readonly ProjectedEntity[],
+  venues: readonly ProjectedEntity[],
+  redirects: ReadonlyMap<string, string>,
 ): ProposalCandidate[] {
   const matches = records.filter(
     (record): record is MatchRecord => record.type === "match",
@@ -80,7 +219,9 @@ function buildProposalQueue(
   const settled = new Set(
     matches
       .filter((match) => match.proposed !== true)
-      .map((match) => matchKey(match.subject, match.entity)),
+      .map((match) =>
+        matchKey(match.subject, resolveRedirect(match.entity, redirects)),
+      ),
   );
 
   // One question, one queue entry: a key raised twice keeps its strongest
@@ -90,7 +231,10 @@ function buildProposalQueue(
     if (match.proposed !== true) {
       continue;
     }
-    const key = matchKey(match.subject, match.entity);
+    const key = matchKey(
+      match.subject,
+      resolveRedirect(match.entity, redirects),
+    );
     if (settled.has(key)) {
       continue;
     }
@@ -100,16 +244,58 @@ function buildProposalQueue(
     }
   }
 
-  return [...strongest.values()]
-    .map((match) => ({
+  const observationToEntity = new Map<string, string>();
+  for (const [kind, entities] of [
+    ["event", events],
+    ["venue", venues],
+  ] as const) {
+    for (const entity of entities) {
+      for (const observationId of entity.observationIds) {
+        observationToEntity.set(observationId, `${kind}:${entity.id}`);
+      }
+    }
+  }
+  const currentEntities = new Set(observationToEntity.values());
+  const byQuestion = new Map<
+    string,
+    { readonly proposal: MatchRecord; readonly entity: string }
+  >();
+  for (const proposal of strongest.values()) {
+    const entity = resolveRedirect(proposal.entity, redirects);
+    const target = parseEntityReference(entity);
+    if (!currentEntities.has(entity)) {
+      continue;
+    }
+    const from =
+      proposal.subject.kind === "observation"
+        ? observationToEntity.get(proposal.subject.id)
+        : undefined;
+    if (from === entity) {
+      continue;
+    }
+    const questionKey =
+      from === undefined
+        ? matchKey(proposal.subject, entity)
+        : `${target.kind}:${[from, entity].toSorted().join("\u0000")}`;
+    const existing = byQuestion.get(questionKey);
+    if (
+      existing === undefined ||
+      compareDecisions(existing.proposal, proposal) < 0
+    ) {
+      byQuestion.set(questionKey, { proposal, entity });
+    }
+  }
+
+  return [...byQuestion.values()]
+    .map(({ proposal, entity }) => ({
       kind: "proposal" as const,
-      matchId: match.id,
-      subject: match.subject,
-      entity: match.entity,
-      verdict: match.verdict,
-      raisedBy: match.by,
-      at: match.at,
-      ...(match.reason === undefined ? {} : { reason: match.reason }),
+      matchId: proposal.id,
+      subject: proposal.subject,
+      entity,
+      verdict: proposal.verdict,
+      raisedBy: proposal.by,
+      at: proposal.at,
+      ...(proposal.reason === undefined ? {} : { reason: proposal.reason }),
     }))
     .toSorted(
       (left, right) =>
@@ -121,6 +307,7 @@ function buildProposalQueue(
 function buildEventPairQueue(
   events: readonly ProjectedEntity[],
   records: readonly LogRecord[],
+  redirects: ReadonlyMap<string, string>,
 ): EventPairCandidate[] {
   const eventsById = new Map(events.map((event) => [event.id, event]));
   const pairs = blockedEventPairs(events);
@@ -133,7 +320,14 @@ function buildEventPairQueue(
     }
     const candidate = compareEvents(left, right);
     return candidate === undefined ||
-      isSuppressed(candidate, left, right, records)
+      isSuppressedPair(
+        "event",
+        candidate.eventIds,
+        left,
+        right,
+        records,
+        redirects,
+      )
       ? []
       : [candidate];
   });
@@ -327,16 +521,18 @@ function eventActs(event: ProjectedEntity): Set<string> {
   return acts;
 }
 
-function isSuppressed(
-  candidate: EventPairCandidate,
+function isSuppressedPair(
+  kind: "event" | "venue",
+  entityIds: readonly [string, string],
   left: ProjectedEntity,
   right: ProjectedEntity,
   records: readonly LogRecord[],
+  redirects: ReadonlyMap<string, string>,
 ): boolean {
-  const observationToEvent = new Map<string, string>();
-  for (const event of [left, right]) {
-    for (const observationId of event.observationIds) {
-      observationToEvent.set(observationId, event.id);
+  const observationToEntity = new Map<string, string>();
+  for (const entity of [left, right]) {
+    for (const observationId of entity.observationIds) {
+      observationToEntity.set(observationId, entity.id);
     }
   }
 
@@ -347,12 +543,14 @@ function isSuppressed(
         record.subject.kind === "observation" && record.proposed !== true,
     )
     .filter((match) => {
-      const subjectEvent = observationToEvent.get(match.subject.id);
-      const target = parseEntityReference(match.entity);
-      if (subjectEvent === undefined || target.kind !== "event") {
+      const subjectEntity = observationToEntity.get(match.subject.id);
+      const target = parseEntityReference(
+        resolveRedirect(match.entity, redirects),
+      );
+      if (subjectEntity === undefined || target.kind !== kind) {
         return false;
       }
-      return samePair(candidate.eventIds, [subjectEvent, target.id]);
+      return samePair(entityIds, [subjectEntity, target.id]);
     })
     .toSorted(compareDecisions);
   const decision = decisions.at(-1);

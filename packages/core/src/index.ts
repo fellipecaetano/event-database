@@ -70,28 +70,36 @@ export type {
   ProposalCandidate,
   ReviewCandidate,
   ReviewReason,
+  VenuePairCandidate,
+  VenueReviewReason,
 } from "./matching.js";
 export {
   judgementDraftSchema,
   prepareJudgement,
   prepareProposalDecision,
   prepareReviewDecision,
+  prepareVenueReviewDecision,
 } from "./judgement.js";
 export type {
   EventDecisionSide,
   EventPairDecisionTarget,
   ProposalDecisionTarget,
+  VenueDecisionSide,
+  VenuePairDecisionTarget,
 } from "./decision-target.js";
 export type {
   JudgementDraft,
   ProposalDecision,
   ReviewedDecision,
+  VenueReviewedDecision,
 } from "./judgement.js";
 export {
   buildProposalCase,
   buildProposalCaseFromWorkspace,
   buildReviewCase,
   buildReviewCaseFromWorkspace,
+  buildVenueReviewCase,
+  buildVenueReviewCaseFromWorkspace,
   reviewCaseDocuments,
 } from "./review.js";
 export type {
@@ -100,6 +108,8 @@ export type {
   ReviewCase,
   ReviewEvidence,
   ReviewSide,
+  VenueReviewCase,
+  VenueReviewSide,
 } from "./review.js";
 export { createReviewWorkspace } from "./review-workspace.js";
 export type { ReviewWorkspace } from "./review-workspace.js";
