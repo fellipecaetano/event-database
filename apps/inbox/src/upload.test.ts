@@ -65,6 +65,41 @@ describe("uploadFiles", () => {
     expect(updates.at(-1)).toBe("first.png:collision");
   });
 
+  it("logs a safe development diagnostic when the direct upload fails", async () => {
+    const error = new Error("upload failed with HTTP 403");
+    const writeError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const service: UploadService = {
+      createIntents: () =>
+        Promise.resolve({
+          uploads: [
+            {
+              name: "first.png",
+              url: "https://uploads.example/first.png",
+              headers: {
+                "Content-Type": "image/png",
+                "If-None-Match": "*" as const,
+              },
+            },
+          ],
+        }),
+      putFile: () => Promise.reject(error),
+    };
+
+    await uploadFiles(
+      [createFile("first.png")],
+      "token",
+      service,
+      () => undefined,
+    );
+
+    expect(writeError).toHaveBeenCalledWith("Inbox upload failed", {
+      error: "upload failed with HTTP 403",
+      file: "first.png",
+    });
+  });
+
   it("starts no more than three file uploads concurrently", async () => {
     let active = 0;
     let maximumActive = 0;

@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build && esbuild functions/create-upload-intents.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/lambda/create-upload-intents.mjs && zip -jq dist/lambda/create-upload-intents.zip dist/lambda/create-upload-intents.mjs",
+    "build": "pnpm build:lambda && pnpm build:site",
+    "build:lambda": "esbuild functions/create-upload-intents.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/lambda/create-upload-intents.cjs && zip -jqFS dist/lambda/create-upload-intents.zip dist/lambda/create-upload-intents.cjs",
+    "build:site": "vite build",
     "dev": "vite",
     "test": "vitest run",
     "test:e2e": "playwright test"

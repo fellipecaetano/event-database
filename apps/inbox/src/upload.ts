@@ -147,6 +147,9 @@ async function uploadOne(
     });
     onUpdate({ name: file.name, status: "succeeded", progress: 1 });
   } catch (error) {
+    if (!(error instanceof UploadCollisionError)) {
+      reportDevelopmentFailure(file.name, error);
+    }
     onUpdate({
       name: file.name,
       status: error instanceof UploadCollisionError ? "collision" : "failed",
@@ -179,12 +182,22 @@ function putFileWithProgress(
       ) {
         resolve();
       } else {
-        reject(new Error("upload failed"));
+        reject(new Error(`upload failed with HTTP ${String(request.status)}`));
       }
     });
     request.addEventListener("error", () => {
-      reject(new Error("upload failed"));
+      reject(new Error("upload failed due to a network error"));
     });
     request.send(file);
+  });
+}
+
+function reportDevelopmentFailure(filename: string, error: unknown): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  console.error("Inbox upload failed", {
+    file: filename,
+    error: error instanceof Error ? error.message : "unknown error",
   });
 }

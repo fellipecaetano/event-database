@@ -63,22 +63,15 @@ pnpm catalogue inbox pull
 `inbox pull` atomically installs each file into `data/inbox/`, deletes only the exact remote
 version after a successful or equal-byte local install, and leaves byte conflicts untouched.
 
-To deploy, build the Lambda and SPA, upload the Lambda ZIP to a bootstrap S3 bucket, then deploy
-[`apps/inbox/infra/template.yaml`](./apps/inbox/infra/template.yaml):
+Use the `deploy-inbox` skill to create or update the uploader. It validates the project, requires
+a non-root AWS profile, derives stable resource names, confirms every cloud mutation, writes the
+public local browser configuration, and publishes only the site assets. For its exact safety and
+deployment procedure, read [the deployment skill](./skills/deploy-inbox/SKILL.md).
 
-```sh
-pnpm build
-aws s3 cp apps/inbox/dist/lambda/create-upload-intents.zip s3://<artifact-bucket>/inbox/create-upload-intents.zip
-aws cloudformation deploy --stack-name event-database-inbox \
-  --template-file apps/inbox/infra/template.yaml --capabilities CAPABILITY_IAM \
-  --parameter-overrides CognitoDomainPrefix=<unique-prefix> \
-  LambdaCodeBucket=<artifact-bucket> LambdaCodeKey=inbox/create-upload-intents.zip
-```
-
-Create `apps/inbox/.env` from the stack's `ApiUrl`, `CognitoAuthority`, and `CognitoClientId`
-outputs, rebuild, sync only `apps/inbox/dist/site/` to the `WebsiteBucket` output, and
-invalidate CloudFront. Create uploader accounts with Cognito's administrator flow;
-self-registration is disabled.
+The stack permits `http://localhost:5173` as the development callback and CORS origin. Override
+the `DevelopmentOrigin` CloudFormation parameter only when running Vite on another localhost port.
+Self-registration is disabled; create uploader accounts separately in Cognito with the `UserPoolId`
+stack output.
 
 ### Working the review queue
 

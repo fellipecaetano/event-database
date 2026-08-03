@@ -5,6 +5,10 @@ Parameters:
   CognitoDomainPrefix:
     Type: String
     AllowedPattern: "[a-z0-9-]{1,63}"
+  DevelopmentOrigin:
+    Type: String
+    Default: http://localhost:5173
+    AllowedPattern: "http://localhost(:[0-9]{1,5})?"
   LambdaCodeBucket:
     Type: String
   LambdaCodeKey:
@@ -37,6 +41,7 @@ Resources:
               - PUT
             AllowedOrigins:
               - !Sub "https://${Distribution.DomainName}"
+              - !Ref DevelopmentOrigin
             MaxAge: 300
 
   DataBucketTlsPolicy:
@@ -150,8 +155,10 @@ Resources:
         - openid
       CallbackURLs:
         - !Sub "https://${Distribution.DomainName}"
+        - !Ref DevelopmentOrigin
       LogoutURLs:
         - !Sub "https://${Distribution.DomainName}"
+        - !Ref DevelopmentOrigin
       GenerateSecret: false
       SupportedIdentityProviders:
         - COGNITO
@@ -214,6 +221,7 @@ Resources:
           - POST
         AllowOrigins:
           - !Sub "https://${Distribution.DomainName}"
+          - !Ref DevelopmentOrigin
         MaxAge: 300
       Name: !Sub "${AWS::StackName}-upload"
       ProtocolType: HTTP
@@ -267,7 +275,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref UploadSigner
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub "${UploadApi.ExecutionArn}/*/*"
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${UploadApi}/*/*"
 
 Outputs:
   ApiUrl:
@@ -278,8 +286,12 @@ Outputs:
     Value: !Ref UserPoolClient
   DataBucket:
     Value: !Ref DataBucket
+  DistributionId:
+    Value: !Ref Distribution
   Region:
     Value: !Ref AWS::Region
+  UserPoolId:
+    Value: !Ref UserPool
   WebsiteBucket:
     Value: !Ref WebsiteBucket
   WebsiteUrl:
