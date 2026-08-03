@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   maximumFilesPerUpload,
+  maximumUploadBatchBytes,
   maximumUploadBytes,
   parseUploadIntent,
   validateInboxFilename,
@@ -74,5 +75,26 @@ describe("parseUploadIntent", () => {
         files: [{ name: "large.png", size: maximumUploadBytes + 1 }],
       }),
     ).toThrow("file exceeds");
+  });
+
+  it("rejects requests beyond the aggregate size limit", () => {
+    expect(() =>
+      parseUploadIntent({
+        files: [
+          {
+            name: "first.png",
+            size: Math.floor(maximumUploadBatchBytes / 3) + 1,
+          },
+          {
+            name: "second.png",
+            size: Math.floor(maximumUploadBatchBytes / 3) + 1,
+          },
+          {
+            name: "third.png",
+            size: Math.floor(maximumUploadBatchBytes / 3) + 1,
+          },
+        ],
+      }),
+    ).toThrow("upload batch exceeds");
   });
 });

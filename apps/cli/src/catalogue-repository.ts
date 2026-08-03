@@ -69,7 +69,15 @@ export class LocalCatalogueData implements CatalogueDataStore {
     const records: LogRecord[] = [];
     for (const stream of ["documents", "observations", "judgements"] as const) {
       const streamPath = this.layout.streamPath(stream);
-      const entries = await readdir(streamPath, { withFileTypes: true });
+      let entries;
+      try {
+        entries = await readdir(streamPath, { withFileTypes: true });
+      } catch (error) {
+        if (isMissingPath(error)) {
+          continue;
+        }
+        throw error;
+      }
       const files = entries
         .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
         .toSorted((left, right) => left.name.localeCompare(right.name));

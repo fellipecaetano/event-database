@@ -2,6 +2,7 @@ import { UserManager, WebStorageStateStore } from "oidc-client-ts";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./app.js";
+import { clearLegacyOidcUsers } from "./auth-storage.js";
 import { createBrowserUploadService } from "./upload.js";
 import "./styles.css";
 
@@ -13,7 +14,7 @@ interface BrowserConfiguration {
 
 async function start(): Promise<void> {
   const configuration = readConfiguration();
-  const browserStore = window.localStorage;
+  clearLegacyOidcUsers(window.localStorage);
   const manager = new UserManager({
     authority: configuration.cognitoAuthority,
     client_id: configuration.cognitoClientId,
@@ -21,8 +22,8 @@ async function start(): Promise<void> {
     post_logout_redirect_uri: window.location.origin,
     response_type: "code",
     scope: "openid",
-    stateStore: new WebStorageStateStore({ store: browserStore }),
-    userStore: new WebStorageStateStore({ store: browserStore }),
+    stateStore: new WebStorageStateStore({ store: window.localStorage }),
+    userStore: new WebStorageStateStore({ store: window.sessionStorage }),
   });
   if (hasAuthorizationResponse()) {
     await manager.signinRedirectCallback();

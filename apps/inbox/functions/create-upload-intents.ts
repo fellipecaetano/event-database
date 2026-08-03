@@ -27,6 +27,7 @@ export interface UploadIntentHandlerDependencies {
     readonly bucket: string;
     readonly key: string;
     readonly contentType: string;
+    readonly contentLength: number;
     readonly expiresInSeconds: number;
   }) => Promise<string>;
 }
@@ -49,6 +50,7 @@ export function createUploadIntentHandler(
             bucket: dependencies.bucket,
             key,
             contentType: file.contentType,
+            contentLength: file.size,
             expiresInSeconds: uploadUrlLifetimeSeconds,
           });
           return {
@@ -71,24 +73,37 @@ export function createUploadIntentHandler(
   };
 }
 
-const s3 = new S3Client({});
+const s3 = new S3Client({ requestChecksumCalculation: "WHEN_REQUIRED" });
+
+export function createS3UploadSigner(
+  client: S3Client,
+): UploadIntentHandlerDependencies["signUpload"] {
+  return async ({
+    bucket,
+    key,
+    contentType,
+    contentLength,
+    expiresInSeconds,
+  }) =>
+    getSignedUrl(
+      client,
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        ContentType: contentType,
+        ContentLength: contentLength,
+        IfNoneMatch: "*",
+      }),
+      { expiresIn: expiresInSeconds },
+    );
+}
 
 export async function handler(
   event: ApiGatewayRequest,
 ): Promise<ApiGatewayResponse> {
   return createUploadIntentHandler({
     bucket: requiredEnvironment("CATALOGUE_DATA_BUCKET"),
-    signUpload: async ({ bucket, key, contentType, expiresInSeconds }) =>
-      getSignedUrl(
-        s3,
-        new PutObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          ContentType: contentType,
-          IfNoneMatch: "*",
-        }),
-        { expiresIn: expiresInSeconds },
-      ),
+    signUpload: createS3UploadSigner(s3),
   })(event);
 }
 

@@ -13,6 +13,12 @@ Parameters:
     Type: String
   LambdaCodeKey:
     Type: String
+  AlarmNotificationTopicArn:
+    Type: String
+    Default: ""
+
+Conditions:
+  HasAlarmNotificationTopic: !Not [!Equals [!Ref AlarmNotificationTopicArn, ""]]
 
 Resources:
   DataBucket:
@@ -32,6 +38,14 @@ Resources:
           - ObjectOwnership: BucketOwnerEnforced
       VersioningConfiguration:
         Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-stale-inbox-uploads
+            Status: Enabled
+            Prefix: inbox/
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders:
@@ -60,6 +74,50 @@ Resources:
             Condition:
               Bool:
                 aws:SecureTransport: false
+
+  InboxObjectCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Unexpected inbox object accumulation
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: BucketName
+          Value: !Ref DataBucket
+        - Name: StorageType
+          Value: AllStorageTypes
+      EvaluationPeriods: 1
+      MetricName: NumberOfObjects
+      Namespace: AWS/S3
+      Period: 86400
+      Statistic: Average
+      Threshold: 10000
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlarmNotificationTopic
+        - [!Ref AlarmNotificationTopicArn]
+        - !Ref AWS::NoValue
+
+  InboxStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Unexpected inbox storage growth
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: BucketName
+          Value: !Ref DataBucket
+        - Name: StorageType
+          Value: StandardStorage
+      EvaluationPeriods: 1
+      MetricName: BucketSizeBytes
+      Namespace: AWS/S3
+      Period: 86400
+      Statistic: Average
+      Threshold: 2147483648
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlarmNotificationTopic
+        - [!Ref AlarmNotificationTopicArn]
+        - !Ref AWS::NoValue
 
   WebsiteBucket:
     Type: AWS::S3::Bucket

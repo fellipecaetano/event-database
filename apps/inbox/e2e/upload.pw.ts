@@ -45,6 +45,15 @@ test.beforeEach(async ({ page }) => {
 
 test("uploads a file through the native picker", async ({ page }) => {
   await page.goto("/");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.keys(window.localStorage).filter((key) =>
+          key.startsWith("oidc.user:"),
+        ),
+      ),
+    )
+    .toEqual([]);
   await page.locator('input[type="file"]').setInputFiles({
     name: "flyer.png",
     mimeType: "image/png",

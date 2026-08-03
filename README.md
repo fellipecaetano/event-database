@@ -63,10 +63,8 @@ pnpm catalogue inbox pull
 `inbox pull` atomically installs each file into `data/inbox/`, deletes only the exact remote
 version after a successful or equal-byte local install, and leaves byte conflicts untouched.
 
-Use the `deploy-inbox` skill to create or update the uploader. It validates the project, requires
-a non-root AWS profile, derives stable resource names, confirms every cloud mutation, writes the
-public local browser configuration, and publishes only the site assets. For its exact safety and
-deployment procedure, read [the deployment skill](./skills/deploy-inbox/SKILL.md).
+The inbox infrastructure is an internal reference implementation. It is not supported deployment
+tooling for third parties; use a separate AWS account and security review before adapting it.
 
 The stack permits `http://localhost:5173` as the development callback and CORS origin. Override
 the `DevelopmentOrigin` CloudFormation parameter only when running Vite on another localhost port.
@@ -153,3 +151,8 @@ The executable record schemas are in
 
 The log is append-only. Do not edit or replace existing records; add a new Observation or
 Judgement that records the correction.
+
+## License
+
+No license is granted. The source is visible for review only; reuse, redistribution, and
+contributions require explicit permission from the maintainer.

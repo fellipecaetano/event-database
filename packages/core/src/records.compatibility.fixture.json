@@ -1,0 +1,34 @@
+[
+  {
+    "type": "document",
+    "id": "019fa69b-63ea-778a-adbf-9660b7ea94a6",
+    "at": "2026-07-27T22:55:00Z",
+    "v": 1,
+    "source": "example-source",
+    "retrieved_at": "2026-07-27T22:55:00Z",
+    "text_source": "retrieved",
+    "artefact": "data/artefacts/example.txt",
+    "artefact_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "text_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "text": "Example event"
+  },
+  {
+    "type": "observation",
+    "id": "019fa69b-63ea-778b-953f-6f7a5bb62657",
+    "at": "2026-07-27T22:55:00Z",
+    "v": 1,
+    "document": "019fa69b-63ea-778a-adbf-9660b7ea94a6",
+    "extractor": "example@1",
+    "subject": {
+      "kind": "event",
+      "id": "019fa69b-63ea-778c-8986-39661d47e556"
+    },
+    "claims": {
+      "title": {
+        "value": "Example event",
+        "spans": ["Example event"]
+      }
+    },
+    "extras": {}
+  }
+]

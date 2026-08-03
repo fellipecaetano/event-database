@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const maximumFilesPerUpload = 20;
 export const maximumUploadBytes = 26_214_400;
+export const maximumUploadBatchBytes = 52_428_800;
 const maximumFilenameBytes = 255;
 const defaultContentType = "application/octet-stream";
 const firstPrintableCharacter = 32;
@@ -52,6 +53,7 @@ export function parseUploadIntent(input: unknown): UploadIntent {
   }
 
   const names = new Set<string>();
+  let totalBytes = 0;
   const files = parsed.files.map((file) => {
     const name = validateInboxFilename(file.name);
     if (names.has(name)) {
@@ -60,6 +62,12 @@ export function parseUploadIntent(input: unknown): UploadIntent {
     if (file.size > maximumUploadBytes) {
       throw new Error(
         `file exceeds ${String(maximumUploadBytes)} bytes: ${name}`,
+      );
+    }
+    totalBytes += file.size;
+    if (totalBytes > maximumUploadBatchBytes) {
+      throw new Error(
+        `upload batch exceeds ${String(maximumUploadBatchBytes)} bytes`,
       );
     }
     names.add(name);

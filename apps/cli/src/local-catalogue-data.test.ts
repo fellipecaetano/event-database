@@ -82,6 +82,14 @@ function observation(documentId_: string = documentId): Observation {
 }
 
 describe("LocalCatalogueData", () => {
+  it("treats a missing data directory as an empty catalogue", async () => {
+    const root = await mkdtemp(join(tmpdir(), "catalogue-empty-"));
+    roots.push(root);
+    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+
+    expect(await data.readLog()).toEqual([]);
+  });
+
   it("reads partitioned records in deterministic directory and filename order", async () => {
     const root = await repository();
     const data = new LocalCatalogueData(new CatalogueDataLayout(root));
