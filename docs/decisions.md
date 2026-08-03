@@ -13,7 +13,6 @@ Where to find things:
 | Everything else decided | this file |
 | Rules to follow while coding | [AGENTS.md](../AGENTS.md) |
 | What record shapes look like | [record-shapes.md](./record-shapes.md) |
-| How we got here | [sessions/](./sessions) |
 
 Ticked items are settled, each with the reasoning that settled it — argue with the reasoning
 rather than only inheriting the conclusion. Unticked items are still open, and are gathered
@@ -88,7 +87,7 @@ under **[Still open](#still-open)** at the end.
       adding a kind means adding its trust profile.
 
       Stating the kind on each Document failed within three Documents:
-      `instagram/example-venue` went in as a `promoter` and then as a `venue-channel`, and an
+       `instagram/example-venue` went in as a `promoter` and then as a `venue-channel`, and an
       append-only log has no way to resolve that. A Source's kind is learned over time and
       belongs to the Source.
 

@@ -101,8 +101,8 @@ Acceptance criteria:
 ## Phase 6: create a disposable sanitized mirror
 
 1. Create a private `git clone --mirror --no-local` outside the workspace.
-2. Use a pinned `git-filter-repo` to remove `data/` and `examples/` with default empty-commit
-   pruning. Apply only explicitly approved historical text replacements.
+2. Use a pinned `git-filter-repo` to remove `data/`, `examples/`, and `docs/sessions/` with
+   default empty-commit pruning. Apply only explicitly approved historical text replacements.
 3. Do not alter author or committer metadata, restore deleted refs, or add a GitHub remote to the
    original repository.
 4. Preserve the filter-repo commit/ref maps outside the repository. Review every pruned commit.

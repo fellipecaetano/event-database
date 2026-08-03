@@ -46,7 +46,7 @@ directory only after the complete draft validates.
 
 ## 3. Establish the Source
 
-`source` is a stable slug — `instagram/example-venue`, `fastix`, `substack/ao-vivo`. It must be
+`source` is a stable slug — `instagram/example-venue`, `ticketing/example`, `listings/example`. It must be
 **identical for every future Document from the same publisher**, because corroboration counts
 distinct Sources: two Documents under different slugs would count as two independent
 witnesses agreeing.
@@ -209,13 +209,10 @@ Document *failed* to supply. The gaps matter as much as the content.
 
 `data/` holds four that between them cover most of what goes wrong:
 
-- **The NIÁ Instagram post** — names no venue. Records no venue.
-- **The FasTix ticketing page** — names its venue, so two subjects from one Document. No
-  JSON-LD despite being a ticketing platform, and no price at all in the export.
-- **The Ao Vivo newsletter** — 132 events whose dates exist only in the sheet's title, so the
-  title is retained as the first line of the text. Cell colour encoded sold-out status and the
-  TSV export dropped it; the legend survives, which makes the loss invisible.
-- **The Primavera Sound poster** — a two-day festival, so two Events, one per day: the door
-  model, not one Event spanning a range. It states a day and no time of day, which is a `date`
-  claim rather than a `start`. And it carries no timestamp or attribution at all, so both
-  `published_at` and `source` had to be asked for — which is what `supplied_by` records.
+- **A venue-channel post** — names no venue. Records no venue.
+- **A ticketing page** — names its venue, so two subjects from one Document. Structured data
+  may be absent, and a page can omit price information.
+- **A weekly newsletter** — dates can exist only in a sheet title, which must be retained as
+  source text. Visual metadata such as cell colour can be lost during conversion.
+- **A two-day festival poster** — yields two Events, one per day: the door model, not one Event
+  spanning a range. A stated day without a time is a `date` claim, not a `start`.

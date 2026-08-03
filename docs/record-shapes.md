@@ -31,7 +31,7 @@ that RFC 9562 describes. Without it, records created in one run sort in random o
 throws away the only reason to prefer a time-ordered id in the first place.
 
 **Sources are the exception.** They are keyed by a stable natural slug —
-`instagram/example-venue`, `google-maps` — not a minted id, because the slug is externally
+`instagram/example-venue`, `example-directory` — not a minted id, because the slug is externally
 stable and saves a lookup at ingest.
 
 **References to entities are typed strings**, `kind:id`:
@@ -105,7 +105,7 @@ The retained source text, its origin and its timestamps.
   "published_at": { "value": "2026-07-24T18:12:00Z", "spans": ["24 de julho"] },
   "retrieved_at": "2026-07-27T14:02:50Z",
   "text_source": "retrieved",
-  "text": "SEXTA 13/03 · EXAMPLE VENUE\nExample Artist + guests\nabertura 22h · line-up a confirmar\nR$30"
+  "text": "FRIDAY 13/03 · EXAMPLE VENUE\nExample Artist + guests\ndoors 22:00 · line-up to be confirmed\nR$30"
 }
 ```
 
@@ -152,7 +152,7 @@ guard refuses the same artefact twice. This is what the shape version is for.
 ## Source
 
 A Source is an entity like a Venue, derived from the log and keyed by a stable slug —
-`instagram/example-venue`, `google-maps`. Documents reference it by that slug and state nothing
+`instagram/example-venue`, `example-directory`. Documents reference it by that slug and state nothing
 about it.
 
 Its **kind** — `venue-channel`, `ticketing`, `listings`, `promoter`, `aggregator`,
