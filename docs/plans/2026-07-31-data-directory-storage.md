@@ -1,6 +1,6 @@
 # Data Directory Storage Plan
 
-Status: phases 1-3 complete. Remote provider implementation is deferred.
+Status: phases 1-3 and remote inbox pull complete. Full data synchronization is deferred.
 
 ## Goal
 
@@ -89,6 +89,12 @@ behavior must not change. Every new executable source file receives direct
 tests.
 
 ## Future Remote Sync
+
+The first remote transport is deliberately narrower: `catalogue inbox pull`
+downloads and atomically installs private `inbox/<filename>` objects, then
+deletes the exact downloaded S3 version. It does not push or pull log
+partitions, retained Artefacts, or inventories. The remaining policy below
+still governs any future full-data implementation.
 
 Remote storage keys are relative to `data/`:
 

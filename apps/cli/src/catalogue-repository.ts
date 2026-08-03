@@ -1,7 +1,9 @@
 import {
   appendFile as fsAppendFile,
+  link,
   lstat,
   mkdir,
+  open,
   readFile,
   readdir,
   rename,
@@ -9,6 +11,7 @@ import {
   truncate,
   unlink,
 } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, relative, sep } from "node:path";
 
 import {
@@ -39,6 +42,11 @@ export interface PreparedIngestCommit {
   readonly expectedHash: string;
   readonly document: Document;
   readonly observations: readonly Observation[];
+}
+
+export interface InboxArtefactInstallation {
+  readonly status: "installed" | "already-present" | "conflict";
+  readonly hash: string;
 }
 
 interface LocalCatalogueDataOptions {
@@ -142,6 +150,47 @@ export class LocalCatalogueData implements CatalogueDataStore {
       hash,
       reference: ArtefactReference.retained(location.filename),
     };
+  }
+
+  async installInboxArtefact(
+    filename: string,
+    contents: AsyncIterable<Uint8Array>,
+  ): Promise<InboxArtefactInstallation> {
+    const destination = this.layout.inboxPath(filename);
+    const temporary = join(
+      this.layout.inboxDirectory(),
+      `.${randomUUID()}.download`,
+    );
+    await this.assertSafeInboxDirectory();
+    try {
+      const file = await open(temporary, "wx");
+      const hasher = createHash("sha256");
+      try {
+        for await (const chunk of contents) {
+          hasher.update(chunk);
+          await file.write(chunk);
+        }
+      } finally {
+        await file.close();
+      }
+      const hash = hasher.digest("hex");
+      try {
+        await link(temporary, destination);
+        return { status: "installed", hash };
+      } catch (error) {
+        if (!isExistingPath(error)) {
+          throw error;
+        }
+        await this.assertSafeInboxFile(destination);
+        const existingHash = hashBytes(await readFile(destination));
+        return {
+          status: existingHash === hash ? "already-present" : "conflict",
+          hash: existingHash,
+        };
+      }
+    } finally {
+      await removeFileIfPresent(temporary);
+    }
   }
 
   async beginIngest(input: PreparedIngestCommit): Promise<IngestTransaction> {
@@ -373,6 +422,25 @@ function isMissingPath(error: unknown): boolean {
     "code" in error &&
     error.code === "ENOENT"
   );
+}
+
+function isExistingPath(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "EEXIST"
+  );
+}
+
+async function removeFileIfPresent(path: string): Promise<void> {
+  try {
+    await unlink(path);
+  } catch (error) {
+    if (!isMissingPath(error)) {
+      throw error;
+    }
+  }
 }
 
 async function assertDirectory(path: string): Promise<void> {

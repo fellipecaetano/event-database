@@ -1,0 +1,112 @@
+:root {
+  --color-canvas: #f4f1e8;
+  --color-ink: #18201b;
+  --color-muted: #637067;
+  --color-accent: #386641;
+  --color-error: #a33c2f;
+  --color-surface: color-mix(in srgb, var(--color-canvas) 84%, white);
+  --space-page: clamp(1rem, 4vw, 3rem);
+  --radius-dropzone: 1.25rem;
+}
+
+[data-theme="dark"] {
+  --color-canvas: #151815;
+  --color-ink: #f2f0e8;
+  --color-muted: #b3baaf;
+  --color-accent: #a7c957;
+  --color-error: #ff8e7b;
+  --color-surface: color-mix(in srgb, var(--color-canvas) 84%, white);
+}
+
+[data-radius="square"] {
+  --radius-dropzone: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 20rem;
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.upload-page {
+  display: grid;
+  min-height: 100dvh;
+  padding: max(var(--space-page), env(safe-area-inset-top))
+    max(var(--space-page), env(safe-area-inset-right))
+    max(var(--space-page), env(safe-area-inset-bottom))
+    max(var(--space-page), env(safe-area-inset-left));
+  place-content: center;
+}
+
+.drop-target {
+  display: grid;
+  width: min(100%, 40rem);
+  min-height: 16rem;
+  padding: 2rem;
+  border: 2px dashed color-mix(in srgb, var(--color-ink) 35%, transparent);
+  border-radius: var(--radius-dropzone);
+  background: var(--color-surface);
+  cursor: pointer;
+  place-content: center;
+  text-align: center;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.drop-target:focus-within,
+.drop-target.is-dragging {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+}
+
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.drop-target__title {
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  font-weight: 650;
+}
+
+.drop-target__hint,
+.upload-statuses,
+.upload-error {
+  color: var(--color-muted);
+}
+
+.drop-target__hint {
+  margin-top: 0.5rem;
+}
+
+.upload-statuses,
+.upload-error {
+  width: min(100%, 40rem);
+}
+
+.upload-statuses p,
+.upload-error {
+  overflow-wrap: anywhere;
+}
+
+.upload-error {
+  color: var(--color-error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-target {
+    transition: none;
+  }
+}

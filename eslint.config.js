@@ -1,6 +1,8 @@
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 
+import { inboxLintConfig } from "./apps/inbox/eslint.config.js";
+
 export default tseslint.config(
   {
     ignores: [
@@ -8,7 +10,7 @@ export default tseslint.config(
       "node_modules/**",
       "build/**",
       ".next/**",
-      "eslint.config.js",
+      "**/eslint.config.js",
       "vitest.config.ts",
     ],
   },
@@ -65,6 +67,7 @@ export default tseslint.config(
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
+  inboxLintConfig,
   {
     files: ["**/*.test.ts"],
     rules: {

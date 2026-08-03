@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { hashText, type Document } from "@event-database/core";
 
 import { runCli } from "./main.js";
+import type { RemoteInbox } from "./s3-inbox.js";
 
 const temporaryDirectories: string[] = [];
 const documentId = "019fa69b-63ea-778a-adbf-9660b7ea94a6";
@@ -94,6 +95,30 @@ describe("verify command", () => {
 
     expect(exitCode).toBe(1);
     expect(errors[0]).toMatch(/data\/documents\/2026-07\.jsonl:1/u);
+  });
+});
+
+describe("inbox command", () => {
+  it("reports an empty successful pull", async () => {
+    const root = await makeRepository(validDocument());
+    const output: string[] = [];
+    const remote: RemoteInbox = {
+      list: async function* () {
+        await Promise.resolve();
+        yield* [];
+      },
+      download: () => Promise.reject(new Error("not reached")),
+      delete: () => Promise.resolve(),
+    };
+
+    const exitCode = await runCli(["inbox", "pull", root], {
+      writeOut: (message) => output.push(message),
+      writeError: () => undefined,
+      createRemoteInbox: () => remote,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(output).toEqual(["Pulled 0 files; 0 already present."]);
   });
 });
 

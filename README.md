@@ -28,6 +28,7 @@ Build before invoking the CLI directly:
 ```sh
 pnpm build
 pnpm catalogue pending
+pnpm catalogue inbox pull
 pnpm catalogue ingest /path/to/draft.json data/inbox/source-file
 pnpm catalogue reextract /path/to/reextract.json
 pnpm catalogue judge /path/to/judgement.json
@@ -46,6 +47,38 @@ log, retained text, references, and Artefact hashes.
 `review` uses the current clock and repository by default; use `--at` for reproducible
 output and `--repository` to read another checkout. Without `--interactive` it prints the
 queue as JSON for a machine to consume.
+
+### Remote inbox
+
+The optional inbox uploader is a private React application that writes files only to a remote
+`inbox/`; it never serves Artefacts or ingests Documents. Pull those files into the existing
+local workflow with AWS credentials configured through the normal provider chain:
+
+```sh
+export CATALOGUE_DATA_BUCKET=<CloudFormation DataBucket output>
+export AWS_REGION=<CloudFormation Region output>
+pnpm catalogue inbox pull
+```
+
+`inbox pull` atomically installs each file into `data/inbox/`, deletes only the exact remote
+version after a successful or equal-byte local install, and leaves byte conflicts untouched.
+
+To deploy, build the Lambda and SPA, upload the Lambda ZIP to a bootstrap S3 bucket, then deploy
+[`apps/inbox/infra/template.yaml`](./apps/inbox/infra/template.yaml):
+
+```sh
+pnpm build
+aws s3 cp apps/inbox/dist/lambda/create-upload-intents.zip s3://<artifact-bucket>/inbox/create-upload-intents.zip
+aws cloudformation deploy --stack-name event-database-inbox \
+  --template-file apps/inbox/infra/template.yaml --capabilities CAPABILITY_IAM \
+  --parameter-overrides CognitoDomainPrefix=<unique-prefix> \
+  LambdaCodeBucket=<artifact-bucket> LambdaCodeKey=inbox/create-upload-intents.zip
+```
+
+Create `apps/inbox/.env` from the stack's `ApiUrl`, `CognitoAuthority`, and `CognitoClientId`
+outputs, rebuild, sync only `apps/inbox/dist/site/` to the `WebsiteBucket` output, and
+invalidate CloudFront. Create uploader accounts with Cognito's administrator flow;
+self-registration is disabled.
 
 ### Working the review queue
 
@@ -109,6 +142,7 @@ For the structured ingestion procedure, read
 - `packages/core/` — schemas, verification, ingestion primitives, Fold, matching, and review
   cases.
 - `apps/cli/` — command-line boundary.
+- `apps/inbox/` — private browser gathering boundary and its AWS stack.
 - `docs/` — architecture decisions, ADRs, record-shape rationale, and working sessions.
 
 ## Project record

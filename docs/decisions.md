@@ -578,6 +578,24 @@ under **[Still open](#still-open)** at the end.
       definition, which closes a real gap — record shapes are currently enforced by nothing —
       and shares types with any future app.
 
+## I. Remote inbox uploader
+
+- [x] **How files reach a remote inbox.** A Cognito-authenticated React app asks a narrow API
+      for short-lived conditional S3 upload URLs, then uploads directly to the private data
+      bucket under `inbox/<filename>`. The API may sign only that prefix; the browser receives
+      no AWS credentials, and the data bucket is never a CloudFront origin. `If-None-Match: *`
+      makes preserved filenames safe under concurrent upload: an existing object produces a
+      visible collision rather than an overwrite.
+
+      The app is deliberately gathering only. It does not parse, ingest, move, or serve an
+      Artefact, so the CLI remains the validated append-only ingestion boundary and ADR 0008's
+      non-republication promise remains structural rather than aspirational.
+- [x] **What remote synchronization ships first.** `catalogue inbox pull` is an explicit,
+      one-way S3-to-local transfer. It streams and atomically installs a direct inbox object,
+      deletes its exact S3 version only after success, treats equal local bytes as a completed
+      prior transfer, and leaves differing bytes on both sides as a conflict. Full conflict-aware
+      `data/` push/pull remains deferred: inbox transport does not make the log remotely writable.
+
 
 # Still open
 

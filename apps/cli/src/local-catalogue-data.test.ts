@@ -114,6 +114,25 @@ describe("LocalCatalogueData", () => {
     );
   });
 
+  it("atomically installs a remote inbox Artefact without overwriting bytes", async () => {
+    const root = await repository();
+    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const expectedHash = hashBytes(new TextEncoder().encode("bytes"));
+
+    expect(
+      await data.installInboxArtefact("post.txt", chunks("bytes")),
+    ).toEqual({ status: "installed", hash: expectedHash });
+    expect(
+      await data.installInboxArtefact("post.txt", chunks("bytes")),
+    ).toEqual({ status: "already-present", hash: expectedHash });
+    expect(
+      await data.installInboxArtefact("post.txt", chunks("different")),
+    ).toEqual({ status: "conflict", hash: expectedHash });
+    expect(
+      await readFile(join(root, "data", "inbox", "post.txt"), "utf8"),
+    ).toBe("bytes");
+  });
+
   it("appends a logical batch to its layout-derived partition", async () => {
     const root = await repository();
     const data = new LocalCatalogueData(new CatalogueDataLayout(root));
@@ -303,3 +322,8 @@ describe("LocalCatalogueData", () => {
     );
   });
 });
+
+async function* chunks(value: string): AsyncIterable<Uint8Array> {
+  await Promise.resolve();
+  yield new TextEncoder().encode(value);
+}

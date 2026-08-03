@@ -35,6 +35,11 @@ import {
 
 import { LocalCatalogueData } from "./catalogue-repository.js";
 import { CatalogueDataLayout } from "./catalogue-data-layout.js";
+import {
+  pullInbox,
+  s3InboxFromEnvironment,
+  type RemoteInbox,
+} from "./s3-inbox.js";
 
 export interface TerminalIo {
   readonly isInteractive: boolean;
@@ -49,6 +54,7 @@ interface CliDependencies {
   readonly now: () => number;
   readonly randomBytes: (length: number) => Uint8Array;
   readonly appendFile?: (path: string, data: string) => Promise<void>;
+  readonly createRemoteInbox: () => RemoteInbox;
   readonly createTerminal: () => TerminalIo;
 }
 
@@ -61,6 +67,7 @@ const defaultDependencies: CliDependencies = {
   },
   now: Date.now,
   randomBytes: (length) => randomBytes(length),
+  createRemoteInbox: s3InboxFromEnvironment,
   createTerminal: () => {
     const rl = createInterface({
       input: process.stdin,
@@ -136,8 +143,11 @@ export async function runCli(
     if (command === "judge") {
       return await runJudge(arguments_.slice(1), dependencies);
     }
+    if (command === "inbox") {
+      return await runInbox(arguments_.slice(1), dependencies);
+    }
     dependencies.writeError(
-      "Usage: event-database <ingest|judge|pending|reextract|review|verify> [arguments]",
+      "Usage: event-database <inbox|ingest|judge|pending|reextract|review|verify> [arguments]",
     );
     return 1;
   } catch (error) {
@@ -256,6 +266,31 @@ async function runPending(
   );
   for (const pending of await data.pendingArtefacts(heldHashes)) {
     dependencies.writeOut(pending.repositoryRelativePath);
+  }
+  return 0;
+}
+
+async function runInbox(
+  arguments_: readonly string[],
+  dependencies: CliDependencies,
+): Promise<number> {
+  const [action, root = process.cwd()] = arguments_;
+  if (action !== "pull") {
+    dependencies.writeError("Usage: event-database inbox pull [repository]");
+    return 1;
+  }
+  const result = await pullInbox(
+    dependencies.createRemoteInbox(),
+    createCatalogueData(root, dependencies),
+  );
+  dependencies.writeOut(
+    `Pulled ${String(result.pulled)} files; ${String(result.alreadyPresent)} already present.`,
+  );
+  if (result.conflicts > 0) {
+    dependencies.writeError(
+      `${String(result.conflicts)} remote inbox files conflict with local bytes.`,
+    );
+    return 1;
   }
   return 0;
 }
