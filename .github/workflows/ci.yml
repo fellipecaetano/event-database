@@ -37,7 +37,7 @@ jobs:
           done < <(git ls-files -z)
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm --filter @event-database/inbox exec playwright install --with-deps chromium
       - run: pnpm --filter @event-database/inbox test:e2e
       - run: pnpm audit --prod --audit-level high
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
