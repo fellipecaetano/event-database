@@ -13,6 +13,7 @@ interface BrowserConfiguration {
 
 async function start(): Promise<void> {
   const configuration = readConfiguration();
+  const browserStore = window.localStorage;
   const manager = new UserManager({
     authority: configuration.cognitoAuthority,
     client_id: configuration.cognitoClientId,
@@ -20,7 +21,8 @@ async function start(): Promise<void> {
     post_logout_redirect_uri: window.location.origin,
     response_type: "code",
     scope: "openid",
-    userStore: new WebStorageStateStore({ store: window.sessionStorage }),
+    stateStore: new WebStorageStateStore({ store: browserStore }),
+    userStore: new WebStorageStateStore({ store: browserStore }),
   });
   if (hasAuthorizationResponse()) {
     await manager.signinRedirectCallback();
