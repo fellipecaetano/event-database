@@ -1,12 +1,9 @@
-# Derived from the log — deletable and rebuildable at any time
 .build/
 dist/
-
 node_modules/
 .pnpm-store/
 *.tsbuildinfo
-
 __pycache__/
 *.pyc
-
 .DS_Store
+data/
