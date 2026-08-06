@@ -25,6 +25,7 @@ import {
   prepareVenueReviewDecision,
   reviewCaseDocuments,
   createProductionFoldRules,
+  fold,
   verifyLog,
   type Document,
   type JudgementDraft,
@@ -36,9 +37,11 @@ import {
   type VenueReviewCase,
   type VenueReviewSide,
 } from "@event-database/core";
+import { generateCatalogueSite } from "@event-database/catalogue-site";
 
 import { LocalCatalogueData } from "./catalogue-repository.js";
 import { CatalogueDataLayout } from "./catalogue-data-layout.js";
+import { installStaticSite, readTheme } from "./static-site-output.js";
 import {
   pullInbox,
   s3InboxFromEnvironment,
@@ -107,6 +110,8 @@ const executableArgumentCount = 2;
 const reviewOptionArgumentCount = 2;
 const reviewUsage =
   "Usage: event-database review [--interactive] [--by person:<id>] [--at <timestamp>] [--repository <path>]";
+const buildSiteUsage =
+  "Usage: event-database build-site [repository] --output <directory> --site-name <name> [--at <timestamp>] [--base-url <absolute URL>] [--locale <locale>] [--theme <CSS file>]";
 
 function createCatalogueData(
   root: string,
@@ -132,6 +137,9 @@ export async function runCli(
     if (command === "verify") {
       return await runVerify(arguments_.slice(1), dependencies);
     }
+    if (command === "build-site") {
+      return await runBuildSite(arguments_.slice(1), dependencies);
+    }
     if (command === "ingest") {
       return await runIngest(arguments_.slice(1), dependencies);
     }
@@ -151,7 +159,7 @@ export async function runCli(
       return await runInbox(arguments_.slice(1), dependencies);
     }
     dependencies.writeError(
-      "Usage: event-database <inbox|ingest|judge|pending|reextract|review|verify> [arguments]",
+      "Usage: event-database <build-site|inbox|ingest|judge|pending|reextract|review|verify> [arguments]",
     );
     return 1;
   } catch (error) {
@@ -160,6 +168,71 @@ export async function runCli(
     );
     return 1;
   }
+}
+
+async function runBuildSite(
+  arguments_: readonly string[],
+  dependencies: CliDependencies,
+): Promise<number> {
+  let now = new Date(dependencies.now());
+  let root = process.cwd();
+  let output: string | undefined;
+  let siteName: string | undefined;
+  let locale = "pt-BR";
+  let baseUrl: string | undefined;
+  let themePath: string | undefined;
+  let positionalRootSeen = false;
+  let index = 0;
+  while (index < arguments_.length) {
+    const argument = arguments_[index];
+    if (argument === undefined) break;
+    if (!argument.startsWith("--")) {
+      if (positionalRootSeen) throw new Error(buildSiteUsage);
+      root = argument;
+      positionalRootSeen = true;
+      index += 1;
+      continue;
+    }
+    const value = arguments_[index + 1];
+    if (value === undefined) throw new Error(buildSiteUsage);
+    if (argument === "--output") output = value;
+    else if (argument === "--site-name") siteName = value;
+    else if (argument === "--locale") locale = value;
+    else if (argument === "--base-url") baseUrl = value;
+    else if (argument === "--theme") themePath = value;
+    else if (argument === "--at") {
+      now = new Date(value);
+      if (Number.isNaN(now.valueOf()))
+        throw new Error(`invalid site build timestamp: ${value}`);
+    } else if (argument === "--repository") root = value;
+    else throw new Error(buildSiteUsage);
+    index += reviewOptionArgumentCount;
+  }
+  if (output === undefined || siteName === undefined)
+    throw new Error(buildSiteUsage);
+  const themeCss =
+    themePath === undefined ? undefined : await readTheme(themePath, output);
+  const records = await createCatalogueData(root, dependencies).readLog();
+  const issues = verifyLog(records, { knownExtractors });
+  if (issues.length > 0)
+    throw new Error(
+      `cannot build site: log has ${String(issues.length)} verification issue(s)`,
+    );
+  const site = generateCatalogueSite(fold(records, { now, rules: foldRules }), {
+    siteName,
+    locale,
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(themeCss === undefined ? {} : { themeCss }),
+  });
+  await installStaticSite(output, root, site.files);
+  for (const diagnostic of site.diagnostics)
+    dependencies.writeError(
+      `warning [${diagnostic.code}]: ${diagnostic.message}`,
+    );
+  dependencies.writeOut(
+    `Built site at ${output}: ${String(site.summary.upcoming)} upcoming, ${String(site.summary.past)} past, ${String(site.summary.excluded)} excluded.`,
+  );
+  return 0;
 }
 
 async function runReextract(

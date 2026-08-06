@@ -6,9 +6,9 @@ be traced back to the evidence that supports it.
 
 ## Status
 
-This is a personal tool with a public aggregator as a later goal. The current implementation
-stores an append-only JSONL log, verifies it, ingests source Artefacts, and produces a
-deterministic matching-review queue that a person can work through interactively.
+This stores an append-only JSONL log, verifies it, ingests source Artefacts, produces a
+deterministic matching-review queue, and can derive a public static catalogue site from the
+Folded catalogue.
 
 ## Quick start
 
@@ -37,6 +37,7 @@ pnpm catalogue review --at 2026-07-28T12:00:00Z
 pnpm catalogue review --repository /path/to/repository
 pnpm catalogue review --interactive --by person:you
 pnpm catalogue verify
+pnpm catalogue build-site --output /tmp/event-database-site --site-name "Agenda de musica ao vivo"
 ```
 
 `ingest` validates a draft, mints record identifiers, hashes and retains the Artefact, and
@@ -47,6 +48,13 @@ log, retained text, references, and Artefact hashes.
 `review` uses the current clock and repository by default; use `--at` for reproducible
 output and `--repository` to read another checkout. Without `--interactive` it prints the
 queue as JSON for a machine to consume.
+
+`build-site` writes a disposable static public site from the verified Fold. It requires
+`--output` and `--site-name`; accepts an optional repository positional argument, `--at`,
+`--locale pt-BR`, `--base-url`, and `--theme <css-file>`; and refuses to replace directories
+it does not own. The output contains no Documents, evidence, internal IDs, or retained
+Artefacts. `base.css` owns layout while `theme.css` owns semantic theme tokens, so a custom
+theme can be supplied without changing generated files.
 
 ### Remote inbox
 
@@ -138,6 +146,7 @@ For the structured ingestion procedure, read
 - `data/` — append-only catalogue log, retained Artefacts, and inbox.
 - `packages/core/` — schemas, verification, ingestion primitives, Fold, matching, and review
   cases.
+- `packages/catalogue-site/` — deterministic public static-site generator.
 - `apps/cli/` — command-line boundary.
 - `apps/inbox/` — private browser gathering boundary and its AWS stack.
 - `docs/` — architecture decisions, ADRs, record-shape rationale, and working sessions.

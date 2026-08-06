@@ -35,6 +35,7 @@ export type ProjectedFact =
   | {
       readonly state: "known";
       readonly value: JsonValue;
+      readonly currency?: string;
       readonly confidence: Confidence;
       readonly evidence: string[];
     }

@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1101.0",
-    "@event-database/core": "workspace:*"
+    "@event-database/core": "workspace:*",
+    "@event-database/catalogue-site": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "26.1.2"

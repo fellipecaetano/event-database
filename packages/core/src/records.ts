@@ -25,7 +25,11 @@ const statedClaimSchema = z
     value: jsonValueSchema,
     spans: nonEmptySpansSchema,
     rule: z.string().min(1).optional(),
-    currency: z.string().length(currencyCodeLength).optional(),
+    currency: z
+      .string()
+      .regex(new RegExp(`^[A-Za-z]{${String(currencyCodeLength)}}$`, "u"))
+      .transform((value) => value.toUpperCase())
+      .optional(),
   })
   .strict();
 

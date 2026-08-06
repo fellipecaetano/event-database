@@ -98,6 +98,77 @@ describe("verify command", () => {
   });
 });
 
+describe("build-site command", () => {
+  it("folds a verified repository into an owned static output", async () => {
+    const root = await makeRepository(
+      validDocument({
+        text: "Show de teste 09/08 Casa",
+        artefact_hash: hashText("artefact"),
+      }),
+    );
+    const output = join(root, "public-site");
+    await mkdir(join(root, "data", "artefacts"));
+    await writeFile(join(root, "data", "artefacts", "post.txt"), "artefact");
+    await writeFile(
+      join(root, "data", "observations", "2026-07.jsonl"),
+      `${JSON.stringify({
+        type: "observation",
+        id: observationId,
+        at,
+        v: 1,
+        document: documentId,
+        extractor: "tsv-parser@1",
+        subject: { kind: "event", id: "019fa69b-63ea-778e-8595-cd28e40852d1" },
+        claims: {
+          title: { value: "Show de teste", spans: ["Show"] },
+          date: { value: "2026-08-09", spans: ["09/08"] },
+          venue_name: { value: "Casa", spans: ["Casa"] },
+        },
+        extras: {},
+      })}\n`,
+    );
+    const messages: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await runCli(
+      [
+        "build-site",
+        root,
+        "--output",
+        output,
+        "--site-name",
+        "Agenda de teste",
+        "--at",
+        "2026-08-05T12:00:00Z",
+      ],
+      {
+        writeOut: (message) => messages.push(message),
+        writeError: (message) => errors.push(message),
+      },
+    );
+
+    expect(errors).toEqual([]);
+    expect(exitCode).toBe(0);
+    await expect(access(join(output, "index.html"))).resolves.toBeUndefined();
+    await expect(
+      readFile(join(output, "index.html"), "utf8"),
+    ).resolves.toContain("Show de teste");
+    expect(messages).toEqual([expect.stringContaining("1 upcoming")]);
+  });
+
+  it("requires an output directory and site name", async () => {
+    const errors: string[] = [];
+
+    const exitCode = await runCli(["build-site"], {
+      writeOut: () => undefined,
+      writeError: (message) => errors.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(errors[0]).toContain("--output");
+  });
+});
+
 describe("inbox command", () => {
   it("reports an empty successful pull", async () => {
     const root = await makeRepository(validDocument());

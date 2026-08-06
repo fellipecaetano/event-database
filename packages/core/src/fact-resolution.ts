@@ -101,7 +101,10 @@ function selectSupportedValue(claims: readonly SourcedClaim[]): ProjectedFact {
     const key =
       "unknown" in claim.claim
         ? "unknown"
-        : `value:${canonicalJson(claim.claim.value)}`;
+        : `value:${canonicalJson({
+            value: claim.claim.value,
+            currency: claim.claim.currency ?? null,
+          })}`;
     const group = support.get(key) ?? [];
     group.push(claim);
     support.set(key, group);
@@ -127,7 +130,13 @@ function selectSupportedValue(claims: readonly SourcedClaim[]): ProjectedFact {
   if (claim === undefined || "unknown" in claim) {
     return { state: "unknown", confidence, evidence };
   }
-  return { state: "known", value: claim.value, confidence, evidence };
+  return {
+    state: "known",
+    value: claim.value,
+    ...(claim.currency === undefined ? {} : { currency: claim.currency }),
+    confidence,
+    evidence,
+  };
 }
 
 function strongestTrust(claims: readonly SourcedClaim[]): number {

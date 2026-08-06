@@ -6,7 +6,10 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "paths": {
-      "@event-database/core": ["./packages/core/src/index.ts"]
+      "@event-database/core": ["./packages/core/src/index.ts"],
+      "@event-database/catalogue-site": [
+        "./packages/catalogue-site/src/index.ts"
+      ]
     },
     "strict": true,
     "noUncheckedIndexedAccess": true,

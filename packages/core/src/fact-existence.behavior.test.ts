@@ -70,6 +70,53 @@ function observation(
 }
 
 describe("resolveFacts", () => {
+  it("preserves price currency and does not corroborate different currencies", () => {
+    const documentA = document(ids.documentA, "2026-07-26T20:00:00Z");
+    const documentB = document(ids.documentB, "2026-07-27T20:00:00Z");
+    const priceA = observationSchema.parse({
+      type: "observation",
+      id: ids.observationA,
+      at: documentA.at,
+      v: 1,
+      document: documentA.id,
+      extractor: "model@1",
+      subject: { kind: "event", id: ids.event },
+      claims: {
+        price_from: { value: 30, currency: "BRL", spans: ["R$30"] },
+      },
+      extras: {},
+    });
+    const priceB = observationSchema.parse({
+      ...priceA,
+      id: ids.observationB,
+      at: documentB.at,
+      document: documentB.id,
+      claims: {
+        price_from: { value: 30, currency: "USD", spans: ["$30"] },
+      },
+    });
+
+    expect(
+      resolveFacts(
+        entity,
+        [priceA, priceB],
+        new Map([
+          [documentA.id, documentA],
+          [documentB.id, documentB],
+        ]),
+        [documentA, documentB, priceA, priceB],
+        new Map(),
+        rules,
+      )["price_from"],
+    ).toEqual({
+      state: "known",
+      value: 30,
+      currency: "USD",
+      confidence: "single-source",
+      evidence: [priceB.id],
+    });
+  });
+
   it("treats a Source's latest publication as a correction, not corroboration", () => {
     const earlierDocument = document(ids.documentA, "2026-07-26T20:00:00Z");
     const laterDocument = document(ids.documentB, "2026-07-27T20:00:00Z");

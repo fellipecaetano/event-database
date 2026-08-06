@@ -629,6 +629,18 @@ from it depends entirely on what renders the data, and nothing does yet.
 - [ ] Whether anything derived is ever committed or published, and in what form.
 - [ ] Rebuild cost, and whether incremental derivation is ever needed.
 
+### Public static catalogue
+
+The first public consumer is a deterministic static site generated from the verified Fold. It
+receives only projected catalogue data, so Documents, evidence, and retained Artefacts cannot
+enter its output. The generator is React static rendering with an explicit clock, initially in
+Brazilian Portuguese. It lists future Events, maintains yearly historical archives, and emits
+opaque public Event URLs. Output is disposable, marked as generator-owned, and replaced
+atomically; deployment remains separate. Confidence presentation is intentionally deferred.
+
+Price currency is retained in the Fold projection. Existing Overrides and Validations describe
+only the numeric price value, so an overridden price can honestly have no currency.
+
 ### Product surface
 
 Questions about an application that does not exist. Worth revisiting the moment one does,
