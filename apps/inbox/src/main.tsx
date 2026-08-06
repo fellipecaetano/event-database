@@ -2,6 +2,7 @@ import { UserManager, WebStorageStateStore } from "oidc-client-ts";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./app.js";
+import { buildAuthenticationRedirectUrl } from "./auth-redirect.js";
 import { clearLegacyOidcUsers } from "./auth-storage.js";
 import { createBrowserUploadService } from "./upload.js";
 import "./styles.css";
@@ -15,11 +16,15 @@ interface BrowserConfiguration {
 async function start(): Promise<void> {
   const configuration = readConfiguration();
   clearLegacyOidcUsers(window.localStorage);
+  const authenticationRedirectUrl = buildAuthenticationRedirectUrl(
+    window.location.href,
+    import.meta.env.BASE_URL,
+  );
   const manager = new UserManager({
     authority: configuration.cognitoAuthority,
     client_id: configuration.cognitoClientId,
-    redirect_uri: window.location.origin,
-    post_logout_redirect_uri: window.location.origin,
+    redirect_uri: authenticationRedirectUrl,
+    post_logout_redirect_uri: authenticationRedirectUrl,
     response_type: "code",
     scope: "openid",
     stateStore: new WebStorageStateStore({ store: window.localStorage }),

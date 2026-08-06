@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Private authenticated inbox uploader for event-database
+Description: Public catalogue and private authenticated inbox uploader for event-database
 
 Parameters:
   CognitoDomainPrefix:
@@ -13,9 +13,19 @@ Parameters:
     Type: String
   LambdaCodeKey:
     Type: String
+  HostedZoneId:
+    Type: String
+  HostedZoneNameServers:
+    Type: String
   AlarmNotificationTopicArn:
     Type: String
     Default: ""
+
+Rules:
+  CloudFrontCertificateRegion:
+    Assertions:
+      - Assert: !Equals [!Ref AWS::Region, us-east-1]
+        AssertDescription: "This stack must run in Region: us-east-1 for CloudFront ACM."
 
 Conditions:
   HasAlarmNotificationTopic: !Not [!Equals [!Ref AlarmNotificationTopicArn, ""]]
@@ -23,6 +33,8 @@ Conditions:
 Resources:
   DataBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
@@ -48,12 +60,10 @@ Resources:
               NoncurrentDays: 7
       CorsConfiguration:
         CorsRules:
-          - AllowedHeaders:
-              - Content-Type
-              - If-None-Match
-            AllowedMethods:
-              - PUT
+          - AllowedHeaders: [Content-Type, If-None-Match]
+            AllowedMethods: [PUT]
             AllowedOrigins:
+              - "https://musicaemsp.com.br"
               - !Sub "https://${Distribution.DomainName}"
               - !Ref DevelopmentOrigin
             MaxAge: 300
@@ -121,6 +131,26 @@ Resources:
 
   WebsiteBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  CatalogueBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
@@ -144,32 +174,258 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
+  CatalogueOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-catalogue"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ViewerRequestFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-viewer-request"
+      AutoPublish: true
+      FunctionCode: |
+        function queryString(querystring) {
+          var parts = [];
+          var names = Object.keys(querystring);
+          for (var i = 0; i < names.length; i++) {
+            var name = names[i];
+            var parameter = querystring[name];
+            if (parameter.multiValue) {
+              for (var j = 0; j < parameter.multiValue.length; j++) {
+                parts.push(
+                  encodeURIComponent(name) +
+                    "=" +
+                    encodeURIComponent(parameter.multiValue[j].value),
+                );
+              }
+            } else {
+              parts.push(
+                encodeURIComponent(name) + "=" + encodeURIComponent(parameter.value),
+              );
+            }
+          }
+          return parts.length ? "?" + parts.join("&") : "";
+        }
+
+        function redirect(location) {
+          return {
+            statusCode: 301,
+            statusDescription: "Moved Permanently",
+            headers: { location: { value: location } },
+          };
+        }
+
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+
+          if (request.headers.host.value === "www.musicaemsp.com.br") {
+            return redirect(
+              "https://musicaemsp.com.br" + uri + queryString(request.querystring),
+            );
+          }
+
+          if (
+            uri === "/inbox" ||
+            uri === "/past" ||
+            /^\/past\/[0-9]{4}$/.test(uri) ||
+            /^\/events\/[^/]+$/.test(uri)
+          ) {
+            return redirect(uri + "/" + queryString(request.querystring));
+          }
+
+          if (uri.charAt(uri.length - 1) === "/") {
+            request.uri = uri + "index.html";
+          }
+
+          return request;
+        }
+      FunctionConfig:
+        Comment: Canonicalize and resolve static catalogue routes
+        Runtime: cloudfront-js-2.0
+
+  CatalogueCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "${AWS::StackName}-catalogue-revalidation"
+        DefaultTTL: 0
+        MaxTTL: 86400
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig: { CookieBehavior: none }
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  InboxShellCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "${AWS::StackName}-inbox-shell-revalidation"
+        DefaultTTL: 0
+        MaxTTL: 86400
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig: { CookieBehavior: none }
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  InboxAssetsCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "${AWS::StackName}-inbox-assets-immutable"
+        DefaultTTL: 31536000
+        MaxTTL: 31536000
+        MinTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig: { CookieBehavior: none }
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  SafeResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "${AWS::StackName}-safe-headers"
+        SecurityHeadersConfig:
+          ContentTypeOptions: { Override: true }
+          FrameOptions: { FrameOption: DENY, Override: true }
+          ReferrerPolicy:
+            { ReferrerPolicy: strict-origin-when-cross-origin, Override: true }
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: true
+            Override: true
+
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: musicaemsp.com.br
+      SubjectAlternativeNames:
+        - www.musicaemsp.com.br
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: musicaemsp.com.br
+          HostedZoneId: !Ref HostedZoneId
+        - DomainName: www.musicaemsp.com.br
+          HostedZoneId: !Ref HostedZoneId
+
   Distribution:
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
+        Aliases:
+          - musicaemsp.com.br
+          - www.musicaemsp.com.br
         Enabled: true
-        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        IpV6Enabled: true
         Origins:
-          - Id: website
+          - Id: catalogue
+            DomainName: !GetAtt CatalogueBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt CatalogueOriginAccessControl.Id
+            S3OriginConfig: {}
+          - Id: inbox
             DomainName: !GetAtt WebsiteBucket.RegionalDomainName
             OriginAccessControlId: !GetAtt WebsiteOriginAccessControl.Id
             S3OriginConfig: {}
         DefaultCacheBehavior:
-          TargetOriginId: website
+          TargetOriginId: catalogue
           ViewerProtocolPolicy: redirect-to-https
-          AllowedMethods:
-            - GET
-            - HEAD
-          CachedMethods:
-            - GET
-            - HEAD
-          ForwardedValues:
-            QueryString: false
-            Cookies:
-              Forward: none
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          CachePolicyId: !Ref CatalogueCachePolicy
+          ResponseHeadersPolicyId: !Ref SafeResponseHeadersPolicy
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt ViewerRequestFunction.FunctionARN
+        CacheBehaviors:
+          - PathPattern: "/inbox/assets/*"
+            TargetOriginId: inbox
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            CachePolicyId: !Ref InboxAssetsCachePolicy
+            ResponseHeadersPolicyId: !Ref SafeResponseHeadersPolicy
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt ViewerRequestFunction.FunctionARN
+          - PathPattern: "/inbox/*"
+            TargetOriginId: inbox
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            CachePolicyId: !Ref InboxShellCachePolicy
+            ResponseHeadersPolicyId: !Ref SafeResponseHeadersPolicy
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt ViewerRequestFunction.FunctionARN
+          - PathPattern: "/inbox"
+            TargetOriginId: inbox
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            CachePolicyId: !Ref InboxShellCachePolicy
+            ResponseHeadersPolicyId: !Ref SafeResponseHeadersPolicy
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt ViewerRequestFunction.FunctionARN
         ViewerCertificate:
-          CloudFrontDefaultCertificate: true
+          AcmCertificateArn: !Ref Certificate
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+
+  ApexAlias:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: musicaemsp.com.br
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+  ApexIpv6Alias:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: musicaemsp.com.br
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+  WwwAlias:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: www.musicaemsp.com.br
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+  WwwIpv6Alias:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: www.musicaemsp.com.br
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
 
   WebsiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -179,23 +435,36 @@ Resources:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
-            Principal:
-              Service: cloudfront.amazonaws.com
+            Principal: { Service: cloudfront.amazonaws.com }
             Action: s3:GetObject
-            Resource: !Sub "${WebsiteBucket.Arn}/*"
+            Resource: !Sub "${WebsiteBucket.Arn}/inbox/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  CatalogueBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CatalogueBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub "${CatalogueBucket.Arn}/*"
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
 
   UserPool:
     Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
-      AdminCreateUserConfig:
-        AllowAdminCreateUserOnly: true
-      AutoVerifiedAttributes:
-        - email
-      UsernameAttributes:
-        - email
+      AdminCreateUserConfig: { AllowAdminCreateUserOnly: true }
+      AutoVerifiedAttributes: [email]
+      UsernameAttributes: [email]
 
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
@@ -206,20 +475,21 @@ Resources:
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
-      AllowedOAuthFlows:
-        - code
+      AllowedOAuthFlows: [code]
       AllowedOAuthFlowsUserPoolClient: true
-      AllowedOAuthScopes:
-        - openid
+      AllowedOAuthScopes: [openid]
       CallbackURLs:
+        - "https://musicaemsp.com.br/inbox/"
+        - !Sub "https://${Distribution.DomainName}/inbox/"
         - !Sub "https://${Distribution.DomainName}"
         - !Ref DevelopmentOrigin
       LogoutURLs:
+        - "https://musicaemsp.com.br/inbox/"
+        - !Sub "https://${Distribution.DomainName}/inbox/"
         - !Sub "https://${Distribution.DomainName}"
         - !Ref DevelopmentOrigin
       GenerateSecret: false
-      SupportedIdentityProviders:
-        - COGNITO
+      SupportedIdentityProviders: [COGNITO]
       UserPoolId: !Ref UserPool
 
   UploadSignerRole:
@@ -229,8 +499,7 @@ Resources:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
+            Principal: { Service: lambda.amazonaws.com }
             Action: sts:AssumeRole
       Policies:
         - PolicyName: write-inbox-only
@@ -242,9 +511,7 @@ Resources:
                 Resource: !Sub "${DataBucket.Arn}/inbox/*"
               - Effect: Allow
                 Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
+                  [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
                 Resource: "*"
 
   UploadSigner:
@@ -272,12 +539,10 @@ Resources:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       CorsConfiguration:
-        AllowHeaders:
-          - Authorization
-          - Content-Type
-        AllowMethods:
-          - POST
+        AllowHeaders: [Authorization, Content-Type]
+        AllowMethods: [POST]
         AllowOrigins:
+          - "https://musicaemsp.com.br"
           - !Sub "https://${Distribution.DomainName}"
           - !Ref DevelopmentOrigin
         MaxAge: 300
@@ -289,11 +554,9 @@ Resources:
     Properties:
       ApiId: !Ref UploadApi
       AuthorizerType: JWT
-      IdentitySource:
-        - $request.header.Authorization
+      IdentitySource: [$request.header.Authorization]
       JwtConfiguration:
-        Audience:
-          - !Ref UserPoolClient
+        Audience: [!Ref UserPoolClient]
         Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
       Name: cognito
 
@@ -312,10 +575,7 @@ Resources:
       AuthorizationType: JWT
       AuthorizerId: !Ref UploadApiAuthorizer
       RouteKey: POST /upload-intents
-      Target: !Join
-        - /
-        - - integrations
-          - !Ref UploadApiIntegration
+      Target: !Join [/, [integrations, !Ref UploadApiIntegration]]
 
   UploadApiStage:
     Type: AWS::ApiGatewayV2::Stage
@@ -354,3 +614,17 @@ Outputs:
     Value: !Ref WebsiteBucket
   WebsiteUrl:
     Value: !Sub "https://${Distribution.DomainName}"
+  CatalogueBucket:
+    Value: !Ref CatalogueBucket
+  CatalogueUrl:
+    Value: https://musicaemsp.com.br
+  InboxUrl:
+    Value: https://musicaemsp.com.br/inbox/
+  DistributionDomainName:
+    Value: !GetAtt Distribution.DomainName
+  HostedZoneId:
+    Value: !Ref HostedZoneId
+  HostedZoneNameServers:
+    Value: !Ref HostedZoneNameServers
+  CertificateArn:
+    Value: !Ref Certificate

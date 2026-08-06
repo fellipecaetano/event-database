@@ -1,0 +1,16 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Retained public DNS zone for musicaemsp.com.br
+
+Resources:
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: musicaemsp.com.br
+
+Outputs:
+  HostedZoneId:
+    Value: !Ref HostedZone
+  HostedZoneNameServers:
+    Value: !Join [",", !GetAtt HostedZone.NameServers]

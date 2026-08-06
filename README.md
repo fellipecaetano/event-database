@@ -56,11 +56,18 @@ it does not own. The output contains no Documents, evidence, internal IDs, or re
 Artefacts. `base.css` owns layout while `theme.css` owns semantic theme tokens, so a custom
 theme can be supplied without changing generated files.
 
+The reference AWS deployment serves the generated catalogue from
+`https://musicaemsp.com.br/`. Use the `deploy-catalogue` skill to prepare, dry-run, or publish
+the catalogue after the shared infrastructure exists. It publishes only generated output to the
+private catalogue website bucket; it does not update CloudFormation or access catalogue source
+data.
+
 ### Remote inbox
 
-The optional inbox uploader is a private React application that writes files only to a remote
-`inbox/`; it never serves Artefacts or ingests Documents. Pull those files into the existing
-local workflow with AWS credentials configured through the normal provider chain:
+The optional inbox uploader at `https://musicaemsp.com.br/inbox/` is a private React application
+that writes files only to a remote `inbox/`; it never serves Artefacts or ingests Documents. Pull
+those files into the existing local workflow with AWS credentials configured through the normal
+provider chain:
 
 ```sh
 export CATALOGUE_DATA_BUCKET=<CloudFormation DataBucket output>
@@ -71,8 +78,10 @@ pnpm catalogue inbox pull
 `inbox pull` atomically installs each file into `data/inbox/`, deletes only the exact remote
 version after a successful or equal-byte local install, and leaves byte conflicts untouched.
 
-The inbox infrastructure is an internal reference implementation. It is not supported deployment
-tooling for third parties; use a separate AWS account and security review before adapting it.
+The inbox infrastructure is the internal reference implementation for the shared S3, CloudFront,
+Route 53, ACM, Cognito, and upload API stack. The `deploy-inbox` skill is its sole infrastructure
+deployment procedure. It is not supported deployment tooling for third parties; use a separate AWS
+account and security review before adapting it.
 
 The stack permits `http://localhost:5173` as the development callback and CORS origin. Override
 the `DevelopmentOrigin` CloudFormation parameter only when running Vite on another localhost port.

@@ -44,7 +44,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("uploads a file through the native picker", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/inbox/");
   await expect
     .poll(() =>
       page.evaluate(() =>

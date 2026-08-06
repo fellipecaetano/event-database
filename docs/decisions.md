@@ -605,6 +605,27 @@ under **[Still open](#still-open)** at the end.
       prior transfer, and leaves differing bytes on both sides as a conflict. Full conflict-aware
       `data/` push/pull remains deferred: inbox transport does not make the log remotely writable.
 
+- [x] **How the public catalogue and private inbox are hosted.** One CloudFront distribution owns
+      `musicaemsp.com.br`: the disposable public catalogue is its default origin and the uploader
+      is mounted at `/inbox/`. Each application has its own private S3 origin and Origin Access
+      Control. The retained data bucket is never an origin. Separate buckets make each deployment's
+      `sync --delete` local to one disposable product instead of relying on exclusions to protect
+      the other.
+
+      Route 53 owns the public hosted zone, ACM supplies an apex-and-`www` certificate, and `www`
+      redirects permanently to the apex. Directory-shaped catalogue URLs have one trailing-slash
+      canonical form that CloudFront maps to generated `index.html` objects; there is no global
+      error fallback that could hide missing catalogue output behind the inbox shell.
+
+      The existing inbox stack remains the infrastructure boundary because it already owns the
+      distribution, Cognito users, and retained data. Its deployment procedure updates
+      CloudFormation and publishes inbox assets under the literal `inbox/` prefix. Catalogue
+      deployment only derives and synchronizes catalogue output. Stateful resources and the hosted
+      zone are retained on replacement or stack deletion, and domain and callback migration is
+      additive until the apex login has been verified. Catalogue assets currently have stable
+      names, so they revalidate rather than claiming immutable caching; only Vite's hashed inbox
+      assets are immutable.
+
 
 # Still open
 

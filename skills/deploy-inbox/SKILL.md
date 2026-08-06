@@ -1,87 +1,66 @@
 ---
 name: deploy-inbox
-description: Deploy or redeploy the private AWS inbox uploader. Use when asked to deploy, publish, update, prepare, or dry-run `apps/inbox` infrastructure or site assets.
+description: Deploy or dry-run the AWS infrastructure, shared distribution, and private inbox application. Use for CloudFormation, Route53, ACM, Lambda, or inbox asset changes.
 ---
 
-# Deploy Inbox Uploader
+# Deploy Inbox
 
-Deploy the private inbox uploader safely. This skill owns CloudFormation, its Lambda artifact,
-the static site publish, and local public browser configuration. It does not destroy resources,
-manage Cognito users, or pull the inbox.
+This skill is the sole owner of the CloudFormation stack, shared CloudFront distribution,
+Route53, ACM, Lambda artifact, and inbox assets. It may inspect `CatalogueBucket` but leaves
+catalogue publishing to `deploy-catalogue`. It never manages Cognito users or inbox data.
 
-Read [README.md](../../README.md), [apps/inbox/AGENTS.md](../../apps/inbox/AGENTS.md), and
-[apps/inbox/infra/template.yaml](../../apps/inbox/infra/template.yaml) before acting.
+Read `../../../README.md`, `../../../apps/inbox/AGENTS.md`, and
+`../../../apps/inbox/infra/template.yaml`. Work from the repository root.
 
-## Modes
+## Mode And Identity
 
-Use **dry run** when asked to check, prepare, plan, or preview deployment. Dry run performs every
-local, identity, and stack-discovery check below, shows the mutation summary, and stops before
-creating a bucket, writing `.env`, uploading an object, deploying a stack, synchronizing the site,
-or invalidating CloudFront.
+Use **dry-run** for check, prepare, plan, or preview requests. Complete discovery, local checks,
+artifact preparation, and change-set inspection, then stop before execution, uploads, asset sync,
+invalidation, DNS delegation, or writing `.env`. Creating a CloudFormation change set is the only
+dry-run cloud mutation and requires confirmation.
 
-Use **deploy** only when asked to deploy or publish. It must receive the explicit confirmation in
-step 5 before its first cloud mutation.
-
-## 1. Establish the deployment identity
-
-Run from the repository root. Read the current commit and working-tree state:
+Use **deploy** only for an explicit deploy or publish request. Every AWS command must include
+`--profile "$PROFILE" --region us-east-1`; this deployment has no other valid region. Ask the user
+to select `PROFILE`, log in if needed, then run:
 
 ```sh
-git rev-parse HEAD
-git status --short
-aws configure list-profiles
+aws sts get-caller-identity --profile "$PROFILE" --region us-east-1
 ```
 
-Ask the user to select an AWS profile. If a profile has expired SSO credentials, offer and run:
+Hard stop when the ARN is `arn:aws:iam::<account>:root`; there is no override. Record the commit
+and `git status --short`. List dirty paths and hard stop unless the user explicitly confirms that
+exact dirty tree.
+
+## Discover Existing State
+
+Use the deployed stack as source of truth; default a new stack to `event-database-inbox`.
 
 ```sh
-aws sso login --profile "<profile>"
+aws cloudformation describe-stacks --stack-name "$STACK" --profile "$PROFILE" --region us-east-1
+aws cloudformation describe-stack-termination-protection --stack-name "$STACK" --profile "$PROFILE" --region us-east-1
+aws cloudformation list-stack-resources --stack-name "$STACK" --profile "$PROFILE" --region us-east-1
+aws cloudformation detect-stack-drift --stack-name "$STACK" --profile "$PROFILE" --region us-east-1
+aws route53 list-hosted-zones-by-name --dns-name musicaemsp.com.br --profile "$PROFILE" --region us-east-1
 ```
 
-Then validate the selected profile:
+Poll `describe-stack-drift-detection-status`, then inspect `describe-stack-resource-drifts`.
+Record status, drift, termination protection, outputs, parameters, every physical resource ID,
+distribution status/config, certificate status, hosted-zone name servers, and apex/www A and AAAA
+records. Use `list-hosted-zones-by-name` before deciding whether the domain stack is absent; stop
+if a matching zone exists with unclear ownership. Query its records only after discovering its id. Stop on stack
+progress/rollback/deletion, drift, unhealthy resources, wrong account/region, or DNS records
+targeting an unexpected distribution. For a new stack, report these checks as not yet applicable.
+If termination protection is disabled, include enabling it as a separately confirmed mutation
+before creating the application change set; do not treat the pre-migration state as unexplained
+drift.
 
-```sh
-aws sts get-caller-identity --profile "<profile>"
-```
+Verify public-access blocks and bucket policies for `DataBucket`, `WebsiteBucket`, and
+`CatalogueBucket`; inspect the artifact bucket too when present. Hard stop if any S3 bucket is
+public. Do not read or write data objects or catalogue objects.
 
-**Hard stop** when its ARN is `arn:aws:iam::<account>:root`. Never offer a root override. Ask for
-an IAM, assumed-role, or SSO profile instead.
+## Validate And Prepare
 
-Resolve the region in this order: a region supplied by the user, the profile's configured region,
-then a direct question. Always use the selected profile and region explicitly in every AWS command.
-
-```sh
-aws configure get region --profile "<profile>"
-```
-
-## 2. Discover or derive the deployment
-
-Default names are deterministic:
-
-```text
-stack: event-database-inbox
-artifact bucket: event-database-inbox-artifacts-<account>-<region>
-Cognito domain prefix: event-database-inbox-<account>-<region>
-development origin: http://localhost:5173
-```
-
-Use existing stack parameters and outputs rather than deriving new names on an update:
-
-```sh
-aws cloudformation describe-stacks --profile "<profile>" --region "<region>" \
-  --stack-name "<stack>"
-```
-
-If the stack does not exist, use defaults unless the user explicitly supplies an override. If its
-status ends in `_IN_PROGRESS`, or is a rollback/deletion state, stop and report it rather than
-racing CloudFormation.
-
-For an artifact bucket that already exists, verify access, ownership, and region. Treat a 403 or a
-different region as a hard conflict. Never empty or replace an existing bucket.
-
-## 3. Validate locally
-
-Before any cloud mutation, run:
+Run before cloud mutation:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -89,212 +68,108 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
-aws cloudformation validate-template --profile "<profile>" --region "<region>" \
-  --template-body file://apps/inbox/infra/template.yaml
-```
-
-If any command fails, stop. Do not deploy an unvalidated build.
-
-If `git status --short` is not empty, list those paths and ask whether to deploy the exact dirty
-tree. Stop unless the user confirms.
-
-## 4. Prepare the artifact
-
-Build the Lambda locally:
-
-```sh
+pnpm build
+pnpm catalogue verify
+aws cloudformation validate-template --template-body file://apps/inbox/infra/template.yaml --profile "$PROFILE" --region us-east-1
+aws cloudformation validate-template --template-body file://apps/inbox/infra/domain-template.yaml --profile "$PROFILE" --region us-east-1
 pnpm --filter @event-database/inbox build:lambda
-```
-
-Hash the uncompressed handler and use the hash in the remote object key. This avoids ZIP timestamp
-churn and makes unchanged artifacts reusable:
-
-```sh
-shasum -a 256 apps/inbox/dist/lambda/create-upload-intents.mjs
-```
-
-The artifact key is:
-
-```text
-inbox/create-upload-intents/<handler-sha256>.zip
-```
-
-Set the key. Check whether it already exists only when the artifact bucket already exists; a new
-bucket necessarily needs an upload after confirmation:
-
-```sh
 HANDLER_SHA256="$(shasum -a 256 apps/inbox/dist/lambda/create-upload-intents.cjs | cut -d ' ' -f 1)"
 ARTIFACT_KEY="inbox/create-upload-intents/$HANDLER_SHA256.zip"
-aws s3api head-object --profile "<profile>" --region "<region>" \
-  --bucket "<artifact-bucket>" --key "$ARTIFACT_KEY"
 ```
 
-A `Not Found` result means the deployment will upload the ZIP; an existing object is reused. A
-missing bucket is not an error in this step: record that it will be created after confirmation.
+The handler is `.cjs` everywhere. Never hash or package a `.mjs` path. Use the existing stack's
+artifact bucket and parameters on update; for a new stack use
+`event-database-inbox-artifacts-<account>-us-east-1`. Inspect ownership, region, encryption,
+versioning, public-access block, and whether `ARTIFACT_KEY` exists. A conflict is a hard stop.
 
-## 5. Confirm cloud mutations
+## Change Set Gate
 
-Before acting, show and ask approval for this complete summary:
+When no hosted zone exists, deploy `domain-template.yaml` first as a dedicated
+`event-database-domain` stack after explicit confirmation. Wait for completion, show its name
+servers, and stop at the registrar delegation gate. Continue only after authoritative DNS resolves
+those name servers. Pass its `HostedZoneId` and comma-separated `HostedZoneNameServers` outputs to
+the application stack; this ordering lets ACM DNS validation complete instead of deadlocking on an
+undelegated zone. Never remove or replace the retained domain stack.
 
-```text
-AWS account and principal
-AWS profile and region
-Current commit and whether the tree is dirty
-Create or update stack
-Artifact bucket and whether it will be created
-Content-addressed Lambda key and whether it will upload
-Cognito domain prefix
-CloudFormation stack name
-Website bucket synchronization with --delete
-CloudFront invalidation
-Writing ignored apps/inbox/.env
-```
+Before creating a change set, summarize account/principal, profile, fixed region, commit/dirty
+state, stack status/drift/termination protection, artifact creation or upload, parameters, Lambda
+key, infrastructure resources affected, inbox asset destinations, `.env`, invalidation, and DNS
+delegation state. Ask for explicit confirmation to create the change set.
 
-Do not proceed without explicit confirmation.
-
-## 6. Create or verify the artifact bucket
-
-Only create the deterministic artifact bucket when it does not exist. Handle `us-east-1` without a
-location constraint. Apply public-access blocking, SSE-S3 encryption, and versioning. For an
-existing bucket, inspect these controls and stop if public access is possible; do not silently
-weaken or replace its configuration.
-
-For a new bucket, run the appropriate creation command, followed by these controls:
+Create a uniquely named `CREATE` or `UPDATE` change set with the template, complete parameter set,
+tags, and `CAPABILITY_IAM`; do not use `aws cloudformation deploy`. Wait for creation and inspect:
 
 ```sh
-if [ "<region>" = us-east-1 ]; then
-  aws s3api create-bucket --profile "<profile>" --region "<region>" \
-    --bucket "<artifact-bucket>"
-else
-  aws s3api create-bucket --profile "<profile>" --region "<region>" \
-    --bucket "<artifact-bucket>" \
-    --create-bucket-configuration LocationConstraint="<region>"
-fi
-aws s3api put-public-access-block --profile "<profile>" --region "<region>" \
-  --bucket "<artifact-bucket>" \
-  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
-aws s3api put-bucket-encryption --profile "<profile>" --region "<region>" \
-  --bucket "<artifact-bucket>" \
-  --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
-aws s3api put-bucket-versioning --profile "<profile>" --region "<region>" \
-  --bucket "<artifact-bucket>" --versioning-configuration Status=Enabled
+aws cloudformation describe-change-set --stack-name "$STACK" --change-set-name "$CHANGE_SET" --include-property-values --profile "$PROFILE" --region us-east-1
 ```
 
-For an existing bucket, inspect instead:
+Hard stop on:
+
+- removal or replacement of `DataBucket`, `UserPool`, `UserPoolClient`, `WebsiteBucket`, or
+  `Distribution`;
+- S3 public access or a policy that permits public access;
+- unexpected IAM action, resource, principal, wildcard, or privilege broadening;
+- any unexplained replacement, deletion, retained-resource change, or security weakening.
+
+Show the complete reviewed changes and a second mutation summary: artifact bucket/object writes,
+change-set execution, inbox sync prefixes and deletes, `.env`, invalidation, and registrar action.
+Dry-run stops here. Deploy requires explicit confirmation before execution.
+
+## Stage Inbox Assets
+
+Before executing a change set that moves the inbox from the distribution root, write the ignored
+`.env`, build the site, and synchronize the literal `inbox/` prefixes using the commands below.
+The existing broad website policy can serve these staged objects after cutover. Require explicit
+confirmation because staging mutates S3. Verify the objects exist before changing the distribution;
+leave all legacy root objects available for template rollback.
+
+## Execute Infrastructure
+
+Create a missing artifact bucket only after confirmation; in `us-east-1` omit
+`LocationConstraint`. Immediately enable all four public-access blocks, SSE-S3 encryption, and
+versioning. Upload only `apps/inbox/dist/lambda/create-upload-intents.zip` to the content-addressed
+artifact key when absent. Never empty or replace the bucket.
+
+Execute the approved change set, wait for stack completion, and report failed events without
+deleting or rolling back retained resources. Re-run all discovery and security checks. Require the
+expected physical IDs to remain unchanged and the distribution to reach `Deployed`.
+
+Registrar delegation must already be complete before the application change set. Never alter it
+implicitly.
+
+## Publish Inbox Assets
+
+Read fresh outputs once. If this is not the initial migration, write ignored `apps/inbox/.env` with
+only `ApiUrl`, `CognitoAuthority`, and `CognitoClientId`, then run
+`pnpm --filter @event-database/inbox build:site`.
+
+The literal destinations are `s3://$WEBSITE_BUCKET/inbox/assets/` and
+`s3://$WEBSITE_BUCKET/inbox/`. Constrain `--delete` to those prefixes:
 
 ```sh
-aws s3api get-bucket-location --profile "<profile>" --region "<region>" \
-  --bucket "<artifact-bucket>"
-aws s3api get-public-access-block --profile "<profile>" --region "<region>" \
-  --bucket "<artifact-bucket>"
-aws s3api get-bucket-encryption --profile "<profile>" --region "<region>" \
-  --bucket "<artifact-bucket>"
-aws s3api get-bucket-versioning --profile "<profile>" --region "<region>" \
-  --bucket "<artifact-bucket>"
+aws s3 sync apps/inbox/dist/site/assets/ "s3://$WEBSITE_BUCKET/inbox/assets/" --delete --cache-control "public,max-age=31536000,immutable" --profile "$PROFILE" --region us-east-1
+aws s3 sync apps/inbox/dist/site/ "s3://$WEBSITE_BUCKET/inbox/" --delete --exclude "assets/*" --cache-control "no-cache" --profile "$PROFILE" --region us-east-1
 ```
 
-Never create, upload, or modify any data-bucket object here.
+During initial migration, leave all legacy root objects untouched. Never sync or delete at the
+`WebsiteBucket` root. Invalidate `/inbox` and `/inbox/*`, wait for completion, and retain the ID.
 
-## 7. Upload and deploy the stack
+## Verify And Report
 
-Upload only the generated Lambda ZIP at the content-addressed key when absent:
+Smoke-test both rollback paths before declaring success:
 
-```sh
-aws s3 cp apps/inbox/dist/lambda/create-upload-intents.zip \
-  "s3://<artifact-bucket>/$ARTIFACT_KEY" \
-  --profile "<profile>" --region "<region>"
-```
+- `https://musicaemsp.com.br/inbox/` and
+  `https://<DistributionDomainName>/inbox/` load the inbox application;
+- static assets load through both hosts and use the expected cache controls;
+- unauthenticated `POST <ApiUrl>/upload-intents` returns HTTP 401;
+- anonymous data-bucket access returns `AccessDenied`, not a network error;
+- all buckets remain private, TLS/security headers are present, and HTTP redirects to HTTPS;
+- apex catalogue remains reachable and `www` redirects to the apex.
 
-Then deploy:
+Report stack/change-set status, stable physical IDs, account/profile/region, drift and termination
+protection, DNS/certificate/distribution state, artifact reuse/upload, exact inbox prefixes changed,
+invalidation result, `.env`, smoke tests, and security checks. Self-registration stays disabled;
+report `UserPoolId` for separate administrator provisioning.
 
-```sh
-aws cloudformation deploy --profile "<profile>" --region "<region>" \
-  --stack-name "<stack>" --template-file apps/inbox/infra/template.yaml \
-  --capabilities CAPABILITY_IAM \
-  --parameter-overrides CognitoDomainPrefix="<prefix>" \
-  DevelopmentOrigin="<development-origin>" \
-  LambdaCodeBucket="<artifact-bucket>" LambdaCodeKey="$ARTIFACT_KEY" \
-  --tags Project=event-database ManagedBy=deploy-inbox
-```
-
-On failure, retrieve recent stack events and report them. Do not delete the stack, buckets, or
-uploaded artifact.
-
-## 8. Build and publish the browser
-
-Read stack outputs in one call, then derive each required value from its `OutputKey`:
-
-```sh
-aws cloudformation describe-stacks --profile "<profile>" --region "<region>" \
-  --stack-name "<stack>" --query "Stacks[0].Outputs" --output json
-```
-
-Create or update the ignored `apps/inbox/.env` with only public values using `apply_patch`:
-
-```dotenv
-VITE_API_URL=<ApiUrl>
-VITE_COGNITO_AUTHORITY=<CognitoAuthority>
-VITE_COGNITO_CLIENT_ID=<CognitoClientId>
-```
-
-Build the site:
-
-```sh
-pnpm --filter @event-database/inbox build:site
-```
-
-Publish assets and HTML separately. The site sync is allowed to delete obsolete objects only in the
-stack's `WebsiteBucket`; never point it at the data or artifact bucket.
-
-```sh
-aws s3 sync apps/inbox/dist/site/assets/ "s3://<website-bucket>/assets/" \
-  --delete --cache-control "public,max-age=31536000,immutable"
-aws s3 sync apps/inbox/dist/site/ "s3://<website-bucket>/" --delete \
-  --exclude "assets/*" --cache-control "no-cache"
-```
-
-Create a `/*` invalidation, wait for it to complete, and retain its ID for the report.
-
-```sh
-INVALIDATION_ID="$(aws cloudfront create-invalidation --profile "<profile>" \
-  --distribution-id "<distribution-id>" --paths '/*' \
-  --query 'Invalidation.Id' --output text)"
-aws cloudfront wait invalidation-completed --profile "<profile>" \
-  --distribution-id "<distribution-id>" --id "$INVALIDATION_ID"
-```
-
-## 9. Smoke test and report
-
-Verify all of the following:
-
-- The stack reaches `CREATE_COMPLETE` or `UPDATE_COMPLETE`.
-- The CloudFront distribution reports `Deployed`.
-- `WebsiteUrl` returns the application.
-- An unauthenticated `POST <ApiUrl>/upload-intents` returns 401.
-- Unauthenticated S3 access to the data bucket returns AccessDenied.
-- Data-bucket public-access blocking remains enabled.
-
-Use `curl` for the public endpoints and `aws s3api get-object --no-sign-request` with an arbitrary
-probe key for anonymous data-bucket access. The API check is successful only for HTTP 401; the S3
-check is successful only when AWS returns `AccessDenied`. Do not accept a network failure as a
-security result.
-
-Report the website URL, stack status, account, profile, region, data bucket, artifact reuse/upload
-status, invalidation result, and whether `.env` was written. Include:
-
-```sh
-pnpm --filter @event-database/inbox dev
-AWS_PROFILE="<profile>" AWS_REGION="<region>" \
-CATALOGUE_DATA_BUCKET="<data-bucket>" pnpm catalogue inbox pull
-```
-
-Self-registration is disabled. Do not create users. Report the `UserPoolId` output and say that an
-administrator must create uploaders through Cognito separately.
-
-## Never
-
-- Never deploy with root credentials.
-- Never proceed through an unconfirmed dirty deployment.
-- Never delete a CloudFormation stack, bucket, user, artifact, or data object.
-- Never serve, copy, or synchronize retained Artefacts into the website bucket.
-- Never log credentials, tokens, or presigned URLs.
+Never delete a stack, bucket, user, data object, catalogue object, retained artifact, or legacy
+root website object. Never log credentials, tokens, or presigned URLs.
