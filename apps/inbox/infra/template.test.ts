@@ -40,7 +40,7 @@ describe("inbox CloudFormation template", () => {
     expect(template).toContain("Region: us-east-1");
     expect(template).toContain("DomainName: musicaemsp.com.br");
     expect(template).toContain("- www.musicaemsp.com.br");
-    expect(template).toContain("IpV6Enabled: true");
+    expect(template).toContain("IPV6Enabled: true");
     expect(template).toContain("SslSupportMethod: sni-only");
     expect(template).toContain("MinimumProtocolVersion: TLSv1.2_2021");
     expect(template).toMatch(/Type: A\n[\s\S]*Type: AAAA/);

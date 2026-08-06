@@ -37,7 +37,6 @@ Use the deployed stack as source of truth; default a new stack to `event-databas
 
 ```sh
 aws cloudformation describe-stacks --stack-name "$STACK" --profile "$PROFILE" --region us-east-1
-aws cloudformation describe-stack-termination-protection --stack-name "$STACK" --profile "$PROFILE" --region us-east-1
 aws cloudformation list-stack-resources --stack-name "$STACK" --profile "$PROFILE" --region us-east-1
 aws cloudformation detect-stack-drift --stack-name "$STACK" --profile "$PROFILE" --region us-east-1
 aws route53 list-hosted-zones-by-name --dns-name musicaemsp.com.br --profile "$PROFILE" --region us-east-1

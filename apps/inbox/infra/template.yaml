@@ -331,7 +331,7 @@ Resources:
           - www.musicaemsp.com.br
         Enabled: true
         HttpVersion: http2and3
-        IpV6Enabled: true
+        IPV6Enabled: true
         Origins:
           - Id: catalogue
             DomainName: !GetAtt CatalogueBucket.RegionalDomainName
@@ -539,7 +539,7 @@ Resources:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       CorsConfiguration:
-        AllowHeaders: [Authorization, Content-Type]
+        AllowHeaders: [authorization, content-type]
         AllowMethods: [POST]
         AllowOrigins:
           - "https://musicaemsp.com.br"
