@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { installStaticSite } from "./static-site-output.js";
+import { installStaticSite, readTheme } from "./static-site-output.js";
 
 const paths: string[] = [];
 afterEach(async () => {
@@ -58,5 +58,39 @@ describe("installStaticSite", () => {
       ]),
     ).rejects.toThrow("real directory");
     await expect(readFile(target, "utf8")).resolves.toBe("sentinel");
+  });
+});
+
+describe("readTheme", () => {
+  it("reads a regular theme file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "event-database-theme-"));
+    paths.push(root);
+    const theme = join(root, "theme.css");
+    await writeFile(theme, ":root { --color-accent: red; }");
+
+    await expect(readTheme(theme, join(root, "site"))).resolves.toContain(
+      "red",
+    );
+  });
+
+  it("rejects a theme inside the output directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "event-database-theme-"));
+    paths.push(root);
+    const output = join(root, "site");
+    const theme = join(output, "theme.css");
+    await expect(readTheme(theme, output)).rejects.toThrow("inside the output");
+  });
+
+  it("rejects a symlinked theme file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "event-database-theme-"));
+    paths.push(root);
+    const target = join(root, "target.css");
+    const theme = join(root, "theme.css");
+    await writeFile(target, ":root {}");
+    await symlink(target, theme);
+
+    await expect(readTheme(theme, join(root, "site"))).rejects.toThrow(
+      "regular file",
+    );
   });
 });

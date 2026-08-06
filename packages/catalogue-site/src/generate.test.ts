@@ -49,8 +49,8 @@ const catalogue: Catalogue = {
 };
 
 describe("generateCatalogueSite", () => {
-  it("renders escaped static pages and omits unsafe ticket URLs", () => {
-    const site = generateCatalogueSite(catalogue, {
+  it("renders escaped static pages and omits unsafe ticket URLs", async () => {
+    const site = await generateCatalogueSite(catalogue, {
       siteName: "Agenda",
       locale: "pt-BR",
     });
@@ -64,8 +64,8 @@ describe("generateCatalogueSite", () => {
     expect(site.files.map((file) => file.path)).toContain("index.html");
   });
 
-  it("keeps the search clear button readable against the theme", () => {
-    const site = generateCatalogueSite(catalogue, {
+  it("keeps the search clear button readable against the theme", async () => {
+    const site = await generateCatalogueSite(catalogue, {
       siteName: "Agenda",
       locale: "pt-BR",
     });
@@ -78,12 +78,12 @@ describe("generateCatalogueSite", () => {
     );
   });
 
-  it("produces stable opaque event paths", () => {
-    const first = generateCatalogueSite(catalogue, {
+  it("produces stable opaque event paths", async () => {
+    const first = await generateCatalogueSite(catalogue, {
       siteName: "Agenda",
       locale: "pt-BR",
     });
-    const second = generateCatalogueSite(catalogue, {
+    const second = await generateCatalogueSite(catalogue, {
       siteName: "Outro nome",
       locale: "pt-BR",
     });
@@ -94,5 +94,20 @@ describe("generateCatalogueSite", () => {
     expect(
       first.files.find((file) => file.path.startsWith("events/"))?.path,
     ).not.toContain(catalogue.events[0]?.id ?? "");
+  });
+
+  it("fails when two Events produce the same public ID", async () => {
+    const firstEvent = catalogue.events[0];
+    if (firstEvent === undefined)
+      throw new Error("test catalogue has no Event");
+    await expect(
+      generateCatalogueSite(
+        {
+          ...catalogue,
+          events: [firstEvent, { ...firstEvent }],
+        },
+        { siteName: "Agenda", locale: "pt-BR" },
+      ),
+    ).rejects.toThrow("public Event ID collision");
   });
 });

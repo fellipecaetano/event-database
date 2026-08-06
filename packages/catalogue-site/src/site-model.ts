@@ -42,6 +42,14 @@ const saoPaulo = "America/Sao_Paulo";
 const yearLength = 4;
 const dateLength = 10;
 const publicIdBytes = 16;
+const maxMillisecondsDigits = 3;
+const localOffsetAttempts = 2;
+const millisecondsPerMinute = 60_000;
+const maximumHour = 23;
+const maximumMinute = 59;
+const maximumSecond = 59;
+const minutesPerHour = 60;
+const offsetComponentWidth = 2;
 
 export function buildSiteModel(catalogue: Catalogue): SiteModel {
   const now = new Date(catalogue.asOf);
@@ -86,6 +94,15 @@ function projectEvent(
 ): PublicEvent | undefined {
   if (knownBoolean(entity.facts["existence"]) !== true) {
     return undefined;
+  }
+  for (const field of ["date", "start", "showtime", "end"]) {
+    const fact = entity.facts[field];
+    if (fact?.state === "known" && knownDateTime(fact) === undefined) {
+      diagnostics.push({
+        code: "invalid-projected-fact",
+        message: `ignored an invalid ${field} value`,
+      });
+    }
   }
   const date = eventDate(entity.facts);
   if (date === undefined) {
@@ -155,6 +172,13 @@ function projectEvent(
       message: "price has no currency",
     });
   }
+  const venue = knownString(entity.facts["venue_name"]);
+  if (venue === undefined) {
+    diagnostics.push({
+      code: "unknown-venue",
+      message: "published an Event whose Venue is not known",
+    });
+  }
   const ticketUrl = safeTicketUrl(knownString(entity.facts["ticket_url"]));
   if (
     knownString(entity.facts["ticket_url"]) !== undefined &&
@@ -172,10 +196,12 @@ function projectEvent(
     id: publicEventId(entity.id),
     title: title ?? lineup.join(" + "),
     date,
-    ...(start === undefined ? {} : { start }),
-    ...(showtime === undefined ? {} : { showtime }),
-    ...(end === undefined ? {} : { end }),
-    venue: knownString(entity.facts["venue_name"]) ?? "Local a confirmar",
+    ...(start === undefined ? {} : { start: normalizeDateTime(start) }),
+    ...(showtime === undefined
+      ? {}
+      : { showtime: normalizeDateTime(showtime) }),
+    ...(end === undefined ? {} : { end: normalizeDateTime(end) }),
+    venue: venue ?? "Local a confirmar",
     lineup,
     genres: knownStrings(entity.facts["genre_words"]),
     ...(price === undefined ? {} : { price }),
@@ -218,12 +244,7 @@ function knownBoolean(fact: ProjectedFact | undefined): boolean | undefined {
 }
 function knownDateTime(fact: ProjectedFact | undefined): string | undefined {
   const value = knownString(fact);
-  return value !== undefined &&
-    /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$/u.test(
-      value,
-    )
-    ? value
-    : undefined;
+  return value !== undefined && isValidDateTime(value) ? value : undefined;
 }
 function knownStatus(
   fact: ProjectedFact | undefined,
@@ -253,14 +274,112 @@ function dateFor(value: string | undefined): string | undefined {
   return dateInSaoPaulo(new Date(value));
 }
 function instantFor(value: string | undefined): Date | undefined {
-  if (
-    value === undefined ||
-    value.length === dateLength ||
-    !/(?:Z|[+-]\d{2}:\d{2})$/u.test(value)
-  )
-    return undefined;
-  const instant = new Date(value);
+  if (value === undefined || value.length === dateLength) return undefined;
+  const instant = /(?:Z|[+-]\d{2}:\d{2})$/u.test(value)
+    ? new Date(value)
+    : localDateTimeInSaoPaulo(value);
   return Number.isNaN(instant.valueOf()) ? undefined : instant;
+}
+function isValidDateTime(value: string): boolean {
+  const date = new Date(`${value.slice(0, dateLength)}T00:00:00Z`);
+  if (
+    Number.isNaN(date.valueOf()) ||
+    date.toISOString().slice(0, dateLength) !== value.slice(0, dateLength)
+  ) {
+    return false;
+  }
+  if (value.length === dateLength) return true;
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/u.exec(
+      value,
+    );
+  if (match === null) return false;
+  const [, , , , hour, minute, second = "0"] = match;
+  if (
+    Number(hour) > maximumHour ||
+    Number(minute) > maximumMinute ||
+    Number(second) > maximumSecond
+  )
+    return false;
+  return /(?:Z|[+-]\d{2}:\d{2})$/u.test(value)
+    ? !Number.isNaN(new Date(value).valueOf())
+    : true;
+}
+function localDateTimeInSaoPaulo(value: string): Date {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/u.exec(
+      value,
+    );
+  if (match === null) return new Date(Number.NaN);
+  const [, year, month, day, hour, minute, second = "0", fraction = ""] = match;
+  const milliseconds = Number(
+    fraction.slice(0, maxMillisecondsDigits).padEnd(maxMillisecondsDigits, "0"),
+  );
+  const localAsUtc = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    milliseconds,
+  );
+  let instant = new Date(localAsUtc);
+  for (let attempt = 0; attempt < localOffsetAttempts; attempt += 1) {
+    instant = new Date(localAsUtc - saoPauloOffset(instant));
+  }
+  return instant;
+}
+function saoPauloOffset(value: Date): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: saoPaulo,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((item) => item.type === type)?.value ?? "0");
+  const representedAsUtc = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day"),
+    part("hour"),
+    part("minute"),
+    part("second"),
+  );
+  return representedAsUtc + value.getMilliseconds() - value.valueOf();
+}
+function normalizeDateTime(value: string): string {
+  if (value.length === dateLength) return value;
+  const instant = instantFor(value);
+  if (instant === undefined) return value;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: saoPaulo,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  const offsetMinutes = saoPauloOffset(instant) / millisecondsPerMinute;
+  const offsetSign = offsetMinutes < 0 ? "-" : "+";
+  const absoluteOffset = Math.abs(offsetMinutes);
+  const offsetHours = String(
+    Math.floor(absoluteOffset / minutesPerHour),
+  ).padStart(offsetComponentWidth, "0");
+  const offsetRemainder = String(absoluteOffset % minutesPerHour).padStart(
+    offsetComponentWidth,
+    "0",
+  );
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}${offsetSign}${offsetHours}:${offsetRemainder}`;
 }
 function dateInSaoPaulo(value: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {

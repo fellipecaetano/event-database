@@ -1,5 +1,8 @@
+import { readFile } from "node:fs/promises";
+
 import type { Catalogue } from "@event-database/core";
 
+import { messagesFor, type Locale } from "./locales.js";
 import { buildSiteModel } from "./site-model.js";
 import {
   baseCss,
@@ -11,7 +14,7 @@ import {
 
 export interface CatalogueSiteOptions {
   readonly siteName: string;
-  readonly locale: string;
+  readonly locale: Locale;
   readonly baseUrl?: string;
   readonly themeCss?: string;
 }
@@ -33,12 +36,10 @@ export interface GeneratedCatalogueSite {
   };
 }
 
-export function generateCatalogueSite(
+export async function generateCatalogueSite(
   catalogue: Catalogue,
   options: CatalogueSiteOptions,
-): GeneratedCatalogueSite {
-  if (options.locale !== "pt-BR")
-    throw new Error(`unsupported site locale: ${options.locale}`);
+): Promise<GeneratedCatalogueSite> {
   if (options.siteName.trim() === "")
     throw new Error("site name must not be empty");
   const baseUrl =
@@ -51,9 +52,11 @@ export function generateCatalogueSite(
     timeZone: "America/Sao_Paulo",
     year: "numeric",
   }).format(new Date(catalogue.asOf));
+  const archiveYears = years.filter((year) => year !== currentYear);
   const renderOptions = {
     ...options,
     asOf: catalogue.asOf,
+    messages: messagesFor(options.locale),
     ...(baseUrl === undefined ? {} : { baseUrl }),
   };
   const files: GeneratedSiteFile[] = [
@@ -61,45 +64,76 @@ export function generateCatalogueSite(
     { path: "assets/theme.css", contents: options.themeCss ?? defaultThemeCss },
     { path: "assets/search.js", contents: searchScript },
     {
+      path: "assets/fonts/archivo.woff2",
+      contents: await readFile(
+        new URL("../assets/fonts/archivo.woff2", import.meta.url),
+      ),
+    },
+    {
+      path: "assets/fonts/newsreader.woff2",
+      contents: await readFile(
+        new URL("../assets/fonts/newsreader.woff2", import.meta.url),
+      ),
+    },
+    {
+      path: "assets/licences/Archivo-OFL.txt",
+      contents: await readFile(
+        new URL("../assets/licences/Archivo-OFL.txt", import.meta.url),
+        "utf8",
+      ),
+    },
+    {
+      path: "assets/licences/Newsreader-OFL.txt",
+      contents: await readFile(
+        new URL("../assets/licences/Newsreader-OFL.txt", import.meta.url),
+        "utf8",
+      ),
+    },
+    {
       path: "index.html",
       contents: renderListPage(
-        "Próximos eventos",
+        renderOptions.messages.list.upcomingTitle,
         model.future,
         renderOptions,
         "index.html",
-        years,
+        archiveYears,
       ),
     },
     {
       path: "past/index.html",
       contents: renderListPage(
-        "Eventos passados",
+        renderOptions.messages.list.pastTitle,
         model.pastByYear.get(currentYear) ?? [],
         renderOptions,
         "past/index.html",
-        years,
+        archiveYears,
       ),
     },
   ];
-  for (const year of years)
+  for (const year of archiveYears)
     files.push({
       path: `past/${year}/index.html`,
       contents: renderListPage(
-        `Eventos de ${year}`,
+        renderOptions.messages.list.yearTitle(year),
         model.pastByYear.get(year) ?? [],
         renderOptions,
         `past/${year}/index.html`,
-        years,
+        archiveYears,
       ),
     });
+  const publicIds = new Set<string>();
   for (const event of [
     ...model.future,
     ...[...model.pastByYear.values()].flat(),
-  ])
+  ]) {
+    if (publicIds.has(event.id))
+      throw new Error(`public Event ID collision: ${event.id}`);
+    publicIds.add(event.id);
     files.push({
       path: `events/${event.id}/index.html`,
       contents: renderEventPage(event, renderOptions),
     });
+  }
   if (baseUrl !== undefined)
     files.push({
       path: "sitemap.xml",

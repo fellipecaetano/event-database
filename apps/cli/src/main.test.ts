@@ -153,7 +153,11 @@ describe("build-site command", () => {
     await expect(
       readFile(join(output, "index.html"), "utf8"),
     ).resolves.toContain("Show de teste");
-    expect(messages).toEqual([expect.stringContaining("1 upcoming")]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("1 upcoming");
+    expect(messages[0]).toContain("Build instant: 2026-08-05T12:00:00.000Z");
+    expect(messages[0]).toContain("Locale: pt-BR");
+    expect(messages[0]).toContain("Warnings: none");
   });
 
   it("requires an output directory and site name", async () => {

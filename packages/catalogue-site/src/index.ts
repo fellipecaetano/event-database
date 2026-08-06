@@ -5,3 +5,5 @@ export type {
   GeneratedSiteFile,
   SiteDiagnostic,
 } from "./generate.js";
+export { localeMessages, messagesFor } from "./locales.js";
+export type { Locale, SiteMessages } from "./locales.js";

@@ -37,7 +37,10 @@ import {
   type VenueReviewCase,
   type VenueReviewSide,
 } from "@event-database/core";
-import { generateCatalogueSite } from "@event-database/catalogue-site";
+import {
+  generateCatalogueSite,
+  type Locale,
+} from "@event-database/catalogue-site";
 
 import { LocalCatalogueData } from "./catalogue-repository.js";
 import { CatalogueDataLayout } from "./catalogue-data-layout.js";
@@ -178,7 +181,7 @@ async function runBuildSite(
   let root = process.cwd();
   let output: string | undefined;
   let siteName: string | undefined;
-  let locale = "pt-BR";
+  let locale: Locale = "pt-BR";
   let baseUrl: string | undefined;
   let themePath: string | undefined;
   let positionalRootSeen = false;
@@ -197,15 +200,17 @@ async function runBuildSite(
     if (value === undefined) throw new Error(buildSiteUsage);
     if (argument === "--output") output = value;
     else if (argument === "--site-name") siteName = value;
-    else if (argument === "--locale") locale = value;
-    else if (argument === "--base-url") baseUrl = value;
+    else if (argument === "--locale") {
+      if (value !== "pt-BR")
+        throw new Error(`unsupported site locale: ${value}`);
+      locale = value;
+    } else if (argument === "--base-url") baseUrl = value;
     else if (argument === "--theme") themePath = value;
     else if (argument === "--at") {
       now = new Date(value);
       if (Number.isNaN(now.valueOf()))
         throw new Error(`invalid site build timestamp: ${value}`);
-    } else if (argument === "--repository") root = value;
-    else throw new Error(buildSiteUsage);
+    } else throw new Error(buildSiteUsage);
     index += reviewOptionArgumentCount;
   }
   if (output === undefined || siteName === undefined)
@@ -218,19 +223,31 @@ async function runBuildSite(
     throw new Error(
       `cannot build site: log has ${String(issues.length)} verification issue(s)`,
     );
-  const site = generateCatalogueSite(fold(records, { now, rules: foldRules }), {
-    siteName,
-    locale,
-    ...(baseUrl === undefined ? {} : { baseUrl }),
-    ...(themeCss === undefined ? {} : { themeCss }),
-  });
+  const site = await generateCatalogueSite(
+    fold(records, { now, rules: foldRules }),
+    {
+      siteName,
+      locale,
+      ...(baseUrl === undefined ? {} : { baseUrl }),
+      ...(themeCss === undefined ? {} : { themeCss }),
+    },
+  );
   await installStaticSite(output, root, site.files);
   for (const diagnostic of site.diagnostics)
     dependencies.writeError(
       `warning [${diagnostic.code}]: ${diagnostic.message}`,
     );
+  const warningCounts = Object.entries(
+    site.diagnostics.reduce<Record<string, number>>((counts, diagnostic) => {
+      counts[diagnostic.code] = (counts[diagnostic.code] ?? 0) + 1;
+      return counts;
+    }, {}),
+  )
+    .toSorted(([left], [right]) => left.localeCompare(right))
+    .map(([code, count]) => `${code}=${String(count)}`)
+    .join(", ");
   dependencies.writeOut(
-    `Built site at ${output}: ${String(site.summary.upcoming)} upcoming, ${String(site.summary.past)} past, ${String(site.summary.excluded)} excluded.`,
+    `Built site at ${output}: ${String(site.summary.upcoming)} upcoming, ${String(site.summary.past)} past, ${String(site.summary.excluded)} excluded. Build instant: ${now.toISOString()}. Locale: ${locale}. Warnings: ${warningCounts || "none"}.`,
   );
   return 0;
 }
