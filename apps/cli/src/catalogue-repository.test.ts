@@ -56,7 +56,7 @@ describe("catalogue repository", () => {
       artefact: "data/artefacts/post.txt",
       artefact_hash: "a".repeat(64),
       text_hash: "b".repeat(64),
-      text: "Show",
+      text: "Evento",
     });
     const observation = logRecordSchema.parse({
       type: "observation",
@@ -66,7 +66,7 @@ describe("catalogue repository", () => {
       document: documentId,
       extractor: "extractor@1",
       subject: { kind: "event", id: eventId },
-      claims: { title: { value: "Show", spans: ["Show"] } },
+      claims: { title: { value: "Evento", spans: ["Evento"] } },
       extras: {},
     });
     await writeFile(

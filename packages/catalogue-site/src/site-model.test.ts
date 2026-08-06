@@ -32,7 +32,7 @@ describe("buildSiteModel", () => {
       catalogue(
         entity({
           existence: known(true),
-          title: known("Show"),
+          title: known("Evento"),
           date: known("2026-08-05"),
           start: known("2026-08-05T18:00"),
           end: known("2026-08-05T23:00"),
@@ -50,7 +50,7 @@ describe("buildSiteModel", () => {
         catalogue(
           entity({
             existence: known(true),
-            title: known("Show"),
+            title: known("Evento"),
             date: known("2026-08-05"),
             start: known("2026-08-05T23:00"),
             end: known("2026-08-05T18:00"),
@@ -65,7 +65,7 @@ describe("buildSiteModel", () => {
       catalogue(
         entity({
           existence: known(true),
-          title: known("Show"),
+          title: known("Evento"),
           date: known("2026-08-05"),
           start: known("2026-08-06T02:00Z"),
         }),
@@ -80,7 +80,7 @@ describe("buildSiteModel", () => {
       catalogue(
         entity({
           existence: known(true),
-          title: known("Show"),
+          title: known("Evento"),
           date: known("2026-08-05"),
           start: known("2026-08-05T25:00"),
         }),

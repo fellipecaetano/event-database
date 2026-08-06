@@ -407,7 +407,7 @@ function buildSide(
 
   // `observationIds` keeps every grouped Observation — a merge must re-point
   // all of them. Evidence narrows through the same lineage selection the
-  // Fold applies, so a superseded reading never renders as if still live.
+  // Fold applies, so a superseded reading never renders as if still current.
   const groupedObservations = entity.observationIds.map((observationId) =>
     lookUpObservation(observationId, observationsById),
   );

@@ -34,7 +34,7 @@ describe("indexLog", () => {
         artefact: "data/artefacts/source.txt",
         artefact_hash: digest,
         text_hash: digest,
-        text: "Show",
+        text: "Evento",
       }),
       record({
         type: "observation",
@@ -44,7 +44,7 @@ describe("indexLog", () => {
         document: ids.document,
         extractor: "extractor@1",
         subject: { kind: "event", id: ids.event },
-        claims: { title: { value: "Show", spans: ["Show"] } },
+        claims: { title: { value: "Evento", spans: ["Evento"] } },
         extras: {},
       }),
       record({

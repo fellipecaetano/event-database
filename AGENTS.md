@@ -1,6 +1,6 @@
 # event-database
 
-Brazilian live-music catalogue, São Paulo first. Data quality is the product.
+Brazilian music events catalogue, São Paulo first. Data quality is the product.
 
 ## Read first
 

@@ -12,7 +12,7 @@ const options = {
 };
 const event: PublicEvent = {
   id: "evt_1234567890123456789012",
-  title: "Show",
+  title: "Evento",
   date: "2026-08-07",
   venue: "Casa",
   lineup: [],
@@ -68,7 +68,7 @@ describe("static renderers", () => {
       [],
     );
 
-    expect(html).toContain("Show");
+    expect(html).toContain("Evento");
     expect(html).toContain("data-search-input");
     expect(html).toContain('src="assets/search.js"');
   });

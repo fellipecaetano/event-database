@@ -26,7 +26,7 @@ const at = "2026-07-27T22:55:00Z";
 function validDocument(
   overrides: Partial<Extract<Document, { v: 1 }>> = {},
 ): Extract<Document, { v: 1 }> {
-  const text = overrides.text ?? "Show";
+  const text = overrides.text ?? "Evento";
   return {
     type: "document",
     id: documentId,
@@ -102,7 +102,7 @@ describe("build-site command", () => {
   it("folds a verified repository into an owned static output", async () => {
     const root = await makeRepository(
       validDocument({
-        text: "Show de teste 09/08 Casa",
+        text: "Evento de teste 09/08 Casa",
         artefact_hash: hashText("artefact"),
       }),
     );
@@ -120,7 +120,7 @@ describe("build-site command", () => {
         extractor: "tsv-parser@1",
         subject: { kind: "event", id: "019fa69b-63ea-778e-8595-cd28e40852d1" },
         claims: {
-          title: { value: "Show de teste", spans: ["Show"] },
+          title: { value: "Evento de teste", spans: ["Evento"] },
           date: { value: "2026-08-09", spans: ["09/08"] },
           venue_name: { value: "Casa", spans: ["Casa"] },
         },
@@ -152,7 +152,7 @@ describe("build-site command", () => {
     await expect(access(join(output, "index.html"))).resolves.toBeUndefined();
     await expect(
       readFile(join(output, "index.html"), "utf8"),
-    ).resolves.toContain("Show de teste");
+    ).resolves.toContain("Evento de teste");
     expect(messages).toHaveLength(1);
     expect(messages[0]).toContain("1 upcoming");
     expect(messages[0]).toContain("Build instant: 2026-08-05T12:00:00.000Z");
@@ -221,14 +221,14 @@ describe("ingest command", () => {
           },
           retrieved_at: "2026-07-28T10:00:00Z",
           text_source: "retrieved",
-          text: "Show at Venue",
+          text: "Evento at Venue",
         },
         extractor: "tsv-parser@1",
         observations: [
           {
             subject: "event",
             claims: {
-              title: { value: "Show", spans: ["Show"] },
+              title: { value: "Evento", spans: ["Evento"] },
               venue_name: { value: "Venue", spans: ["Venue"] },
             },
             extras: {},
@@ -320,7 +320,7 @@ describe("ingest command", () => {
           },
           retrieved_at: "2026-07-28T10:00:00Z",
           text_source: "retrieved",
-          text: "Show",
+          text: "Evento",
         },
         extractor: "tsv-parser@1",
         observations: [],
@@ -362,7 +362,7 @@ describe("ingest command", () => {
           },
           retrieved_at: "2026-07-28T10:00:00Z",
           text_source: "retrieved",
-          text: "Show",
+          text: "Evento",
         },
         extractor: "unknown@1",
         observations: [],
@@ -394,13 +394,13 @@ describe("ingest command", () => {
           source: { value: "source", supplied_by: "person:reviewer" },
           retrieved_at: "2026-07-28T10:00:00Z",
           text_source: "retrieved",
-          text: "Show",
+          text: "Evento",
         },
         extractor: "tsv-parser@1",
         observations: [
           {
             subject: "event",
-            claims: { title: { value: "Show", spans: ["Show"] } },
+            claims: { title: { value: "Evento", spans: ["Evento"] } },
             extras: {},
           },
         ],
@@ -452,7 +452,7 @@ describe("reextract command", () => {
         document: documentId,
         extractor: "tsv-parser@1",
         subject: { kind: "event", id: subjectId },
-        claims: { title: { value: "Show", spans: ["Show"] } },
+        claims: { title: { value: "Evento", spans: ["Evento"] } },
         extras: {},
       })}\n`,
     );
@@ -465,7 +465,7 @@ describe("reextract command", () => {
         observations: [
           {
             supersedes: observationId,
-            claims: { title: { value: "Show", spans: ["Show"] } },
+            claims: { title: { value: "Evento", spans: ["Evento"] } },
             extras: {},
           },
         ],

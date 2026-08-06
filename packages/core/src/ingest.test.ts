@@ -24,14 +24,14 @@ const draft: IngestDraft = {
     },
     retrieved_at: at,
     text_source: "retrieved",
-    text: "Show at Venue",
+    text: "Evento at Venue",
   },
   extractor: "extractor@1",
   observations: [
     {
       subject: "event",
       claims: {
-        title: { value: "Show", spans: ["Show"] },
+        title: { value: "Evento", spans: ["Evento"] },
         venue_name: { value: "Venue", spans: ["Venue"] },
       },
       extras: {},
@@ -112,7 +112,7 @@ describe("prepareIngest", () => {
         id: firstId,
         v: 2,
         text_hash:
-          "7321fa0a9a062c49f9d3f67e17d24ae1323689da73a351d25cddf376d85ee168",
+          "5f56272bb1b52ab882b527b6d035ba63404259cc2f993cbe7ac89d8fcb5477f3",
       }),
     );
     expect(result.observations).toEqual([
@@ -216,7 +216,7 @@ describe("prepareReextraction", () => {
           {
             supersedes: secondId,
             claims: {
-              title: { value: "Show", spans: ["Show"] },
+              title: { value: "Evento", spans: ["Evento"] },
             },
             extras: {},
           },

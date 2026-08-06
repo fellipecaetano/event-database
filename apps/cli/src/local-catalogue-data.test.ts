@@ -63,7 +63,7 @@ function document(
     artefact,
     artefact_hash: digest,
     text_hash: digest,
-    text: "Show",
+    text: "Evento",
   });
 }
 
@@ -76,7 +76,7 @@ function observation(documentId_: string = documentId): Observation {
     document: documentId_,
     extractor: "extractor@1",
     subject: { kind: "event", id: eventId },
-    claims: { title: { value: "Show", spans: ["Show"] } },
+    claims: { title: { value: "Evento", spans: ["Evento"] } },
     extras: {},
   });
 }

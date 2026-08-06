@@ -1,6 +1,6 @@
 # Event Database
 
-A catalogue of live music events in Brazil, starting with São Paulo and expanding to
+A catalogue of music events in Brazil, starting with São Paulo and expanding to
 other Brazilian cities. Its differentiator is data quality: every fact is traceable to
 the sources it came from and cross-checked between them.
 
@@ -10,7 +10,8 @@ the sources it came from and cross-checked between them.
 
 **Event**:
 A single occasion the public can attend, at one Venue, with one start time. A three-day
-festival is three Events; an early show and a late show on the same night are two Events.
+festival is three Events; an early performance and a late performance on the same night are two
+Events.
 _Avoid_: gig, concert, session, listing
 
 **Venue**:

@@ -1,6 +1,6 @@
 # event-database
 
-A catalogue of live music events in Brazil, starting in São Paulo. It treats data quality as
+A catalogue of music events in Brazil, starting in São Paulo. It treats data quality as
 the product: each catalogue fact is derived from immutable, retained source material and can
 be traced back to the evidence that supports it.
 
@@ -37,7 +37,7 @@ pnpm catalogue review --at 2026-07-28T12:00:00Z
 pnpm catalogue review --repository /path/to/repository
 pnpm catalogue review --interactive --by person:you
 pnpm catalogue verify
-pnpm catalogue build-site --output /tmp/event-database-site --site-name "Agenda de musica ao vivo"
+pnpm catalogue build-site --output /tmp/event-database-site --site-name "Agenda musical"
 ```
 
 `ingest` validates a draft, mints record identifiers, hashes and retains the Artefact, and

@@ -23,7 +23,7 @@ function records(): LogRecord[] {
       artefact: "data/artefacts/show.txt",
       artefact_hash: digest,
       text_hash: digest,
-      text: "Show",
+      text: "Evento",
     }),
     logRecordSchema.parse({
       type: "observation",
@@ -33,7 +33,7 @@ function records(): LogRecord[] {
       document: documentId,
       extractor: "claude-opus-5/manual@draft",
       subject: { kind: "event", id: eventId },
-      claims: { title: { value: "Show", spans: ["Show"] } },
+      claims: { title: { value: "Evento", spans: ["Evento"] } },
       extras: {},
     }),
   ];
@@ -57,7 +57,7 @@ describe("createReviewWorkspace", () => {
     expect(event?.id).toBe(eventId);
     expect(event?.observationIds).toEqual([observationId]);
     expect(event?.facts["title"]).toEqual(
-      expect.objectContaining({ value: "Show" }),
+      expect.objectContaining({ value: "Evento" }),
     );
     expect(workspace.catalogue.asOf).toBe(options.now.toISOString());
   });

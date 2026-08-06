@@ -69,7 +69,7 @@ describe("observationClaimSpans", () => {
         id: "019fa69b-63ea-778e-8595-cd28e40852d1",
       },
       claims: {
-        title: { value: "Show", spans: ["Show"] },
+        title: { value: "Evento", spans: ["Evento"] },
         venue_name: { unknown: true, spans: ["local a definir"] },
       },
       extras: {
@@ -81,7 +81,7 @@ describe("observationClaimSpans", () => {
     });
 
     expect(observationClaimSpans(observation)).toEqual([
-      { field: "title", span: "Show" },
+      { field: "title", span: "Evento" },
       { field: "venue_name", span: "local a definir" },
       { field: "accessibility", span: "acessível" },
       { field: "accessibility", span: "entrada lateral" },

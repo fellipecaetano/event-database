@@ -43,7 +43,7 @@ function observation({
     document,
     extractor,
     subject: { kind: "event", id: event },
-    claims: { title: { value: "Show", spans: ["Show"] } },
+    claims: { title: { value: "Evento", spans: ["Evento"] } },
     extras: {},
     ...(supersedes === undefined ? {} : { supersedes }),
   });

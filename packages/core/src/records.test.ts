@@ -50,7 +50,7 @@ describe("logRecordSchema", () => {
       },
       claims: {
         title: {
-          value: "Show",
+          value: "Evento",
           spans: [],
         },
       },
@@ -89,7 +89,7 @@ describe("logRecordSchema", () => {
       v: 1,
       entity: "event:dead-beef",
       field: "title",
-      value: "Show",
+      value: "Evento",
       by: "person:reviewer",
       reason: "test",
     };

@@ -15,7 +15,7 @@ const document = logRecordSchema.parse({
   artefact: "data/artefacts/post.txt",
   artefact_hash: "a".repeat(64),
   text_hash: "b".repeat(64),
-  text: "Show",
+  text: "Evento",
 });
 
 describe("CatalogueDataLayout", () => {

@@ -41,7 +41,7 @@ under **[Still open](#still-open)** at the end.
       needs no separate tombstone machinery — the merge record is the redirect, and
       un-merging is a superseding judgement.
 - [x] **A named room is not a Venue.** The unit is the Venue and the room is a fact about the
-      Event: `Sesc Pinheiros` is one Venue, `Teatro Paulo Autran` is where in it the gig
+      Event: `Sesc Pinheiros` is one Venue, `Teatro Paulo Autran` is where in it the Event
       happened. This follows the identity-is-the-operation rule, and it is what lets a Document
       naming only the unit resolve at all — many write it that way, and under the alternative
       such a Document could not be resolved to any room.
@@ -52,7 +52,7 @@ under **[Still open](#still-open)** at the end.
       parsing at fold time and needs no re-extraction.
 
       What is given up: `Teatro Paulo Autran` seats 700 and `Auditório` does not, so for "what
-      will this gig be like" they are different places, and the catalogue will not say so.
+      will this Event be like" they are different places, and the catalogue will not say so.
 - [x] **Venue lifecycle.** Identity is the operation, not the address: renaming records an
       Alias and keeps the Venue, while a different club at an old address is a different
       Venue. Closure is recorded when a Document reveals it — it fits the model as an
@@ -322,7 +322,7 @@ under **[Still open](#still-open)** at the end.
       Saturday — while date plus venue gives 6. That 287-fold reduction is what makes an LLM
       working the review band affordable at all. Adding act overlap caught no additional pairs
       on this data, so the union costs nothing and insures against the case venue-only misses:
-      one gig listed as "Cine Joia" by one source and "Cine Joia SP" by another.
+      one Event listed as "Cine Joia" by one source and "Cine Joia SP" by another.
 
       Note this does *not* require venues to be resolved first. Blocking uses the normalised
       string, so event and venue matching proceed independently; resolution improves recall
@@ -501,6 +501,10 @@ under **[Still open](#still-open)** at the end.
 
 ## G. Scope and expansion
 
+- [x] **Catalogue scope.** The catalogue covers music events in general, not only live music or
+      live performances. A `Performance` and its `Showtime` remain valid facts when an Event has
+      one, but neither is required by the product scope.
+
 - [x] **Adding a second city.** No trigger and no gate. The architecture is already
       city-agnostic — Venues are created on sight, Sources are not city-scoped, nothing filters
       ingest by geography — so a Rio newsletter simply produces Rio events. Coverage follows
@@ -675,7 +679,7 @@ Each is cheap to revisit, because the log retains whatever is needed to derive i
 - [ ] **Coverage shape as an existence signal** — the idea that a real Event accumulates
       mentions as it approaches, so flat coverage near the date suggests it quietly died.
       Distinct from plain staleness, because it reads elapsed silence *relative to* the event
-      date: one mention five months before a gig six months away is normal, the same gap the
+      date: one mention five months before an Event six months away is normal, the same gap the
       day before is not.
 
       Deferred because it is unmeasurable and would add machinery for no present return. All

@@ -24,9 +24,9 @@ const document: Document = {
   retrieved_at: "2026-07-27T22:55:00Z",
   text_source: "retrieved",
   artefact: "data/artefacts/post.txt",
-  text_hash: hashText("Show at Venue"),
+  text_hash: hashText("Evento no local"),
   artefact_hash: digest,
-  text: "Show at Venue",
+  text: "Evento no local",
 };
 
 const observation: Observation = {
@@ -38,7 +38,7 @@ const observation: Observation = {
   extractor: "extractor@1",
   subject: { kind: "event", id: subjectId },
   claims: {
-    title: { value: "Show", spans: ["Show"] },
+    title: { value: "Evento", spans: ["Evento"] },
   },
   extras: {},
 };

@@ -5,7 +5,7 @@ export interface SiteMessages {
     readonly historyYears: string;
   };
   readonly list: {
-    readonly liveMusic: string;
+    readonly musicEvents: string;
     readonly noEvents: string;
     readonly intro: string;
     readonly noResults: string;
@@ -53,7 +53,7 @@ export const localeMessages = {
       historyYears: "Anos do histórico",
     },
     list: {
-      liveMusic: "Música ao vivo",
+      musicEvents: "Eventos musicais",
       noEvents: "Ainda não há eventos nesta seleção.",
       intro: "Shows e festas para marcar na agenda.",
       noResults: "Nenhum evento encontrado.",
@@ -86,7 +86,7 @@ export const localeMessages = {
       available: "Ingressos disponíveis",
     },
     metadata: {
-      description: "Agenda de música ao vivo.",
+      description: "Agenda de eventos musicais.",
     },
     footer: {
       updatedAt: (value: string): string => `Atualizado em ${value}`,

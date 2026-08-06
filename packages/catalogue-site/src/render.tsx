@@ -25,7 +25,7 @@ export function renderListPage(
       <SiteHeader currentPath={currentPath} options={options} />
       <main>
         <section className="hero">
-          <p className="eyebrow">{options.messages.list.liveMusic}</p>
+          <p className="eyebrow">{options.messages.list.musicEvents}</p>
           <h1>{title}</h1>
           <p>
             {events.length === 0
@@ -36,7 +36,7 @@ export function renderListPage(
         <Search messages={options.messages} />
         <section
           aria-live="polite"
-          aria-label={options.messages.list.liveMusic}
+          aria-label={options.messages.list.musicEvents}
         >
           <p data-no-results hidden className="empty">
             {options.messages.list.noResults}{" "}

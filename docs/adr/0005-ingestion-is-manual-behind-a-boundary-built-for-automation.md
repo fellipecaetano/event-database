@@ -15,7 +15,7 @@ We also investigated whether structured access exists and found none worth waiti
 Sympla's public API is scoped to the caller's own events, Eventbrite withdrew public event
 search in 2019, and Resident Advisor has no official public API. Freeform Documents are not
 a compromise here — they are the only broadly available input, and the underground listings
-this catalogue cares about live in Instagram posts and newsletters regardless.
+this catalogue cares about appear in Instagram posts and newsletters regardless.
 
 ## Consequences
 

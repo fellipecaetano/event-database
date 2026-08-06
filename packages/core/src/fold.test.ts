@@ -47,7 +47,7 @@ function document(
     artefact: `data/artefacts/${id}.txt`,
     text_hash: digest,
     artefact_hash: id === ids.documentA ? digest : "b".repeat(64),
-    text: "Show Changed Venue",
+    text: "Evento com local alterado",
   });
 }
 
@@ -91,7 +91,7 @@ describe("fold", () => {
           id: ids.observationA,
           documentId: ids.documentA,
           eventId: ids.eventA,
-          title: "Show",
+          title: "Evento",
         }),
       ],
       { now, rules },
@@ -106,7 +106,7 @@ describe("fold", () => {
     expect(catalogue.events[0]?.facts["title"]).toEqual(
       expect.objectContaining({
         state: "known",
-        value: "Show",
+        value: "Evento",
         confidence: "single-source",
       }),
     );
@@ -120,13 +120,13 @@ describe("fold", () => {
         id: ids.observationA,
         documentId: ids.documentA,
         eventId: ids.eventA,
-        title: "Show",
+        title: "Evento",
       }),
       observation({
         id: ids.observationB,
         documentId: ids.documentB,
         eventId: ids.eventB,
-        title: "Show",
+        title: "Evento",
       }),
       logRecordSchema.parse({
         type: "match",
@@ -168,7 +168,7 @@ describe("fold", () => {
           id: ids.observationA,
           documentId: ids.documentA,
           eventId: ids.eventA,
-          title: "Show",
+          title: "Evento",
         }),
         observation({
           id: ids.observationB,
@@ -200,7 +200,7 @@ describe("fold", () => {
           id: ids.observationA,
           documentId: ids.documentA,
           eventId: ids.eventA,
-          title: "Show",
+          title: "Evento",
         }),
         observation({
           id: ids.observationB,
@@ -231,13 +231,13 @@ describe("fold", () => {
           id: ids.observationA,
           documentId: ids.documentA,
           eventId: ids.eventA,
-          title: "Show",
+          title: "Evento",
         }),
         observation({
           id: ids.observationB,
           documentId: ids.documentB,
           eventId: ids.eventA,
-          title: "Show",
+          title: "Evento",
         }),
       ],
       { now, rules },
@@ -245,7 +245,7 @@ describe("fold", () => {
 
     expect(catalogue.events[0]?.facts["title"]).toEqual(
       expect.objectContaining({
-        value: "Show",
+        value: "Evento",
         confidence: "corroborated",
         evidence: [ids.observationA, ids.observationB],
       }),
@@ -259,7 +259,7 @@ describe("fold", () => {
         id: ids.observationA,
         documentId: ids.documentA,
         eventId: ids.eventA,
-        title: "Show",
+        title: "Evento",
       }),
       logRecordSchema.parse({
         type: "override",
@@ -292,7 +292,7 @@ describe("fold", () => {
         id: ids.observationA,
         documentId: ids.documentA,
         eventId: ids.eventA,
-        title: "Show",
+        title: "Evento",
       }),
     ];
     const validation = logRecordSchema.parse({
@@ -305,7 +305,7 @@ describe("fold", () => {
         entity: `event:${ids.eventA}`,
         field: "title",
       },
-      vouched_for: "Show",
+      vouched_for: "Evento",
       tier: "single-source",
       rules: "rules@1",
       by: "person:reviewer",
@@ -350,13 +350,13 @@ describe("fold", () => {
           id: ids.observationA,
           documentId: ids.documentA,
           eventId: ids.eventA,
-          title: "Show",
+          title: "Evento",
         }),
         observation({
           id: ids.observationB,
           documentId: ids.documentB,
           eventId: ids.eventB,
-          title: "Show",
+          title: "Evento",
         }),
         same,
         differentOtherTarget,
@@ -386,7 +386,7 @@ describe("fold", () => {
           id: ids.observationA,
           documentId: ids.documentA,
           eventId: ids.eventA,
-          title: "Show",
+          title: "Evento",
           at: "2026-07-27T23:00:00Z",
         }),
         observation({
@@ -420,7 +420,7 @@ describe("fold", () => {
         id: ids.observationA,
         documentId: ids.documentA,
         eventId: ids.eventA,
-        title: "Show",
+        title: "Evento",
       }),
       observation({
         id: ids.observationB,
@@ -455,7 +455,7 @@ describe("fold", () => {
 
     expect(
       fold(records, { now, rules: sourceRules }).events[0]?.facts["title"],
-    ).toEqual(expect.objectContaining({ value: "Show" }));
+    ).toEqual(expect.objectContaining({ value: "Evento" }));
   });
 
   it("projects entity Validation into existence Confidence", () => {
@@ -465,7 +465,7 @@ describe("fold", () => {
         id: ids.observationA,
         documentId: ids.documentA,
         eventId: ids.eventA,
-        title: "Show",
+        title: "Evento",
       }),
     ];
     const validation = logRecordSchema.parse({
@@ -474,7 +474,7 @@ describe("fold", () => {
       at: "2026-07-27T23:00:00Z",
       v: 2,
       target: { kind: "event", id: ids.eventA },
-      vouched_for: { title: "Show" },
+      vouched_for: { title: "Evento" },
       rules: rules.version,
       by: "person:reviewer",
     });
@@ -509,7 +509,7 @@ describe("fold", () => {
             id: ids.observationA,
             documentId: ids.documentA,
             eventId: ids.eventA,
-            title: "Show",
+            title: "Evento",
           }),
           observation({
             id: ids.observationB,

@@ -854,7 +854,7 @@ Perform a real-data smoke build into a temporary directory:
 ```sh
 pnpm catalogue build-site \
   --output /tmp/event-database-site \
-  --site-name "Agenda de musica ao vivo" \
+  --site-name "Agenda musical" \
   --at 2026-08-05T12:00:00Z
 ```
 
