@@ -57,7 +57,9 @@ SHA-256 hashes as stable JSON for update automation; without it, the command pri
 `--locale pt-BR`, `--base-url`, and `--theme <css-file>`; and refuses to replace directories
 it does not own. The output contains no Documents, evidence, internal IDs, or retained
 Artefacts. `base.css` owns layout while `theme.css` owns semantic theme tokens, so a custom
-theme can be supplied without changing generated files.
+theme can be supplied without changing generated files. The default editable assets live in
+`packages/catalogue-site/assets/base.css`, `theme.css`, and `search.js`; the site generator
+minifies them into the generated site.
 
 The reference AWS deployment serves the generated catalogue from
 `https://musicaemsp.com.br/`. Use the `deploy-catalogue` skill to prepare, dry-run, or publish

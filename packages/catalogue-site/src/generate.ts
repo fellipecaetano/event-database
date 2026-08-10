@@ -1,16 +1,11 @@
 import { readFile } from "node:fs/promises";
 
 import type { Catalogue } from "@event-database/core";
+import { transform } from "esbuild";
 
 import { messagesFor, type Locale } from "./locales.js";
 import { buildSiteModel } from "./site-model.js";
-import {
-  baseCss,
-  defaultThemeCss,
-  renderEventPage,
-  renderListPage,
-  searchScript,
-} from "./render.js";
+import { renderEventPage, renderListPage } from "./render.js";
 
 export interface CatalogueSiteOptions {
   readonly siteName: string;
@@ -59,9 +54,24 @@ export async function generateCatalogueSite(
     messages: messagesFor(options.locale),
     ...(baseUrl === undefined ? {} : { baseUrl }),
   };
+  const [baseCssSource, defaultThemeCssSource, searchScriptSource] =
+    await Promise.all([
+      readFile(new URL("../assets/base.css", import.meta.url), "utf8"),
+      readFile(new URL("../assets/theme.css", import.meta.url), "utf8"),
+      readFile(new URL("../assets/search.js", import.meta.url), "utf8"),
+    ]);
+  const [baseCss, defaultThemeCss, searchScript] = await Promise.all([
+    minify(baseCssSource, "css"),
+    minify(defaultThemeCssSource, "css"),
+    minify(searchScriptSource, "js"),
+  ]);
+  const themeCss =
+    options.themeCss === undefined
+      ? defaultThemeCss
+      : await minify(options.themeCss, "css");
   const files: GeneratedSiteFile[] = [
     { path: "assets/base.css", contents: baseCss },
-    { path: "assets/theme.css", contents: options.themeCss ?? defaultThemeCss },
+    { path: "assets/theme.css", contents: themeCss },
     { path: "assets/search.js", contents: searchScript },
     {
       path: "assets/fonts/archivo.woff2",
@@ -149,6 +159,12 @@ export async function generateCatalogueSite(
     },
   };
 }
+
+async function minify(source: string, loader: "css" | "js"): Promise<string> {
+  const result = await transform(source, { loader, minify: true });
+  return result.code;
+}
+
 function normalizeBaseUrl(value: string): string {
   const url = new URL(value);
   if (

@@ -12,6 +12,7 @@ export default tseslint.config(
       ".next/**",
       "**/eslint.config.js",
       "vitest.config.ts",
+      "packages/catalogue-site/assets/**/*.js",
     ],
   },
   eslint.configs.recommended,

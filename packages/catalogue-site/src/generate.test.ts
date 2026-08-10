@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import type { Catalogue } from "@event-database/core";
@@ -76,6 +78,31 @@ describe("generateCatalogueSite", () => {
     expect(stylesheet?.contents).toContain(
       ".search button,.ticket{font:inherit;padding:.5rem .75rem;border:1px solid var(--color-border);color:var(--color-text);background:var(--color-background)}",
     );
+  });
+
+  it("minifies generated CSS and JavaScript assets", async () => {
+    const site = await generateCatalogueSite(catalogue, {
+      siteName: "Agenda",
+      locale: "pt-BR",
+    });
+    const stylesheet = site.files.find(
+      (file) => file.path === "assets/base.css",
+    );
+    const script = site.files.find((file) => file.path === "assets/search.js");
+    const [sourceStylesheet, sourceScript] = await Promise.all([
+      readFile(new URL("../assets/base.css", import.meta.url), "utf8"),
+      readFile(new URL("../assets/search.js", import.meta.url), "utf8"),
+    ]);
+
+    expect(sourceStylesheet).toContain("* {\n  box-sizing: border-box;\n}");
+    expect(sourceScript).toContain(
+      'const searchInput = document.querySelector("[data-search-input]");',
+    );
+    expect(stylesheet?.contents).not.toBe(sourceStylesheet);
+    expect(script?.contents).not.toBe(sourceScript);
+    expect(stylesheet?.contents).toContain("*{box-sizing:border-box}");
+    expect(script?.contents).toContain("(()=>{");
+    expect(script?.contents).not.toContain("const searchInput =");
   });
 
   it("produces stable opaque event paths", async () => {

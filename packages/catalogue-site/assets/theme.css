@@ -1,0 +1,37 @@
+@font-face {
+  font-family: Newsreader;
+  src: url("fonts/newsreader.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Archivo;
+  src: url("fonts/archivo.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --color-background: #f7f0e3;
+  --color-text: #17130f;
+  --color-muted: #655d53;
+  --color-accent: #c64020;
+  --color-border: #c9bba8;
+  --color-focus: #005fcc;
+  --font-display: Newsreader, Georgia, serif;
+  --font-body: Archivo, system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #17130f;
+    --color-text: #f7f0e3;
+    --color-muted: #c9bba8;
+    --color-accent: #ff7350;
+    --color-border: #655d53;
+    --color-focus: #78b7ff;
+  }
+}
