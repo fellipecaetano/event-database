@@ -261,11 +261,11 @@ function Search({
 }): React.JSX.Element {
   return (
     <form className="search" role="search">
-      <label htmlFor="event-search">{messages.list.searchLabel}</label>
       <input
         id="event-search"
         name="q"
         type="search"
+        placeholder={messages.list.searchLabel}
         autoComplete="off"
         data-search-input
       />
