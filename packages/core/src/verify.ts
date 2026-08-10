@@ -1,6 +1,7 @@
 import { parseEntityReference } from "./entity-reference.js";
 import { documentMetadataSpans, observationClaimSpans } from "./grounding.js";
 import { hashText } from "./hashing.js";
+import { sourceTrustProfiles } from "./source-trust.js";
 import {
   logRecordSchema,
   type Document,
@@ -79,6 +80,7 @@ export type VerificationIssueCode =
   | "missing-superseded-observation"
   | "text-hash-mismatch"
   | "ungrounded-span"
+  | "unknown-source-kind"
   | "unknown-extractor";
 
 export interface VerificationIssue {
@@ -199,6 +201,19 @@ export function verifyLog(
   }
 
   for (const record of records) {
+    if (
+      record.type === "override" &&
+      parseEntityReference(record.entity).kind === "source" &&
+      record.field === "kind" &&
+      (typeof record.value !== "string" ||
+        !Object.hasOwn(sourceTrustProfiles, record.value))
+    ) {
+      issues.push({
+        code: "unknown-source-kind",
+        message: `source kind must be one of ${Object.keys(sourceTrustProfiles).join(", ")}`,
+        recordId: record.id,
+      });
+    }
     if (
       record.type === "match" &&
       record.creates_entity === true &&

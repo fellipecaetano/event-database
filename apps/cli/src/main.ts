@@ -115,6 +115,7 @@ const reviewUsage =
   "Usage: event-database review [--interactive] [--by person:<id>] [--at <timestamp>] [--repository <path>]";
 const buildSiteUsage =
   "Usage: event-database build-site [repository] --output <directory> --site-name <name> [--at <timestamp>] [--base-url <absolute URL>] [--locale <locale>] [--theme <CSS file>]";
+const pendingUsage = "Usage: event-database pending [--json] [repository]";
 
 function createCatalogueData(
   root: string,
@@ -350,7 +351,23 @@ async function runPending(
   arguments_: readonly string[],
   dependencies: CliDependencies,
 ): Promise<number> {
-  const [root = process.cwd()] = arguments_;
+  let root = process.cwd();
+  let json = false;
+  let repositorySeen = false;
+  for (const argument of arguments_) {
+    if (argument === "--json") {
+      if (json) {
+        throw new Error(pendingUsage);
+      }
+      json = true;
+      continue;
+    }
+    if (argument.startsWith("--") || repositorySeen) {
+      throw new Error(pendingUsage);
+    }
+    root = argument;
+    repositorySeen = true;
+  }
   const data = createCatalogueData(root, dependencies);
   const records = await data.readLog();
   const heldHashes = new Set(
@@ -358,8 +375,22 @@ async function runPending(
       .filter((record): record is Document => record.type === "document")
       .map((document) => document.artefact_hash),
   );
-  for (const pending of await data.pendingArtefacts(heldHashes)) {
-    dependencies.writeOut(pending.repositoryRelativePath);
+  const pending = await data.pendingArtefacts(heldHashes);
+  if (json) {
+    dependencies.writeOut(
+      JSON.stringify(
+        pending.map((artefact) => ({
+          filename: artefact.filename,
+          repositoryRelativePath: artefact.repositoryRelativePath,
+          hash: artefact.hash,
+          artefact: artefact.reference.value,
+        })),
+      ),
+    );
+    return 0;
+  }
+  for (const artefact of pending) {
+    dependencies.writeOut(artefact.repositoryRelativePath);
   }
   return 0;
 }
@@ -990,6 +1021,15 @@ async function runIngest(
     }),
   });
 
+  const verificationIssues = verifyLog(
+    [...existingRecords, prepared.document, ...prepared.observations],
+    { knownExtractors },
+  );
+  if (verificationIssues.length > 0) {
+    reportVerificationIssues(verificationIssues, dependencies);
+    return 1;
+  }
+
   await commitIngest(
     await data.beginIngest({
       sourcePath: inspectedArtefact.path,
@@ -1005,6 +1045,17 @@ async function runIngest(
     `Ingested Document ${prepared.document.id} with ${String(prepared.observations.length)} ${noun}.`,
   );
   return 0;
+}
+
+function reportVerificationIssues(
+  issues: readonly ReturnType<typeof verifyLog>[number][],
+  dependencies: Pick<CliDependencies, "writeError">,
+): void {
+  for (const issue of issues) {
+    dependencies.writeError(
+      `${issue.code}: ${issue.recordId}: ${issue.message}`,
+    );
+  }
 }
 
 const entryPoint = process.argv[1];

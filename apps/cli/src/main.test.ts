@@ -293,6 +293,64 @@ describe("ingest command", () => {
     await expect(access(artefact)).resolves.toBeUndefined();
   });
 
+  it("rejects an invalid candidate log before moving the Artefact", async () => {
+    const root = await makeRepository(validDocument());
+    const observations = join(root, "data", "observations");
+    await writeFile(
+      join(observations, "2026-07.jsonl"),
+      `${JSON.stringify({
+        type: "observation",
+        id: "019fa69b-63ea-778c-8ea7-232f8cbde22a",
+        at,
+        v: 1,
+        document: "019fa69b-63ea-778d-8ea7-232f8cbde22a",
+        extractor: "unknown@1",
+        subject: { kind: "event", id: "019fa69b-63ea-778e-8ea7-232f8cbde22a" },
+        claims: {},
+        extras: {},
+      })}\n`,
+    );
+    const inbox = join(root, "data", "inbox");
+    await mkdir(inbox);
+    const artefact = join(inbox, "post.txt");
+    await writeFile(artefact, "incoming");
+    const draftPath = join(root, "draft.json");
+    await writeFile(
+      draftPath,
+      JSON.stringify({
+        document: {
+          source: { value: "source", supplied_by: "person:reviewer" },
+          retrieved_at: "2026-07-28T10:00:00Z",
+          text_source: "retrieved",
+          text: "Evento",
+        },
+        extractor: "tsv-parser@1",
+        observations: [],
+      }),
+    );
+    const errors: string[] = [];
+
+    const exitCode = await runCli(["ingest", draftPath, artefact, root], {
+      writeOut: () => undefined,
+      writeError: (message) => errors.push(message),
+      now: () => Date.parse("2026-07-28T12:00:00Z"),
+      randomBytes: (length) => new Uint8Array(length),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(errors).toContainEqual(
+      expect.stringContaining(
+        "missing-document: 019fa69b-63ea-778c-8ea7-232f8cbde22a",
+      ),
+    );
+    expect(errors).toContainEqual(
+      expect.stringContaining(
+        "unknown-extractor: 019fa69b-63ea-778c-8ea7-232f8cbde22a",
+      ),
+    );
+    await expect(access(artefact)).resolves.toBeUndefined();
+  });
+
   it("does not overwrite an existing Artefact with the same filename", async () => {
     const root = await makeRepository(
       validDocument({
@@ -667,6 +725,29 @@ describe("pending command", () => {
 
     expect(exitCode).toBe(0);
     expect(output).toEqual(["data/inbox/new.txt"]);
+  });
+
+  it("serializes pending Artefacts as stable JSON", async () => {
+    const root = await makeRepository(validDocument());
+    const inbox = join(root, "data", "inbox");
+    await mkdir(inbox);
+    await writeFile(join(inbox, "new.txt"), "new");
+    const output: string[] = [];
+
+    const exitCode = await runCli(["pending", "--json", root], {
+      writeOut: (message) => output.push(message),
+      writeError: () => undefined,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output[0] ?? "")).toEqual([
+      {
+        filename: "new.txt",
+        repositoryRelativePath: "data/inbox/new.txt",
+        hash: "11507a0e2f5e69d5dfa40a62a1bd7b6ee57e6bcd85c67c9b8431b36fff21c437",
+        artefact: "data/artefacts/new.txt",
+      },
+    ]);
   });
 });
 

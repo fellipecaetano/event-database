@@ -28,6 +28,7 @@ Build before invoking the CLI directly:
 ```sh
 pnpm build
 pnpm catalogue pending
+pnpm catalogue pending --json
 pnpm catalogue inbox pull
 pnpm catalogue ingest /path/to/draft.json data/inbox/source-file
 pnpm catalogue reextract /path/to/reextract.json
@@ -48,6 +49,8 @@ log, retained text, references, and Artefact hashes.
 `review` uses the current clock and repository by default; use `--at` for reproducible
 output and `--repository` to read another checkout. Without `--interactive` it prints the
 queue as JSON for a machine to consume.
+`pending --json` reports pending inbox filenames, repository paths, Artefact references, and
+SHA-256 hashes as stable JSON for update automation; without it, the command prints paths only.
 
 `build-site` writes a disposable static public site from the verified Fold. It requires
 `--output` and `--site-name`; accepts an optional repository positional argument, `--at`,

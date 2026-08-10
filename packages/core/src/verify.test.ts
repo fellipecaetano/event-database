@@ -100,6 +100,24 @@ describe("verifyLog", () => {
       code: "unknown-extractor",
       knownExtractors: new Set(["another-extractor@1"]),
     },
+    {
+      name: "an unknown Source kind",
+      records: [
+        document,
+        logRecordSchema.parse({
+          type: "override",
+          id: "019fa69b-63ea-7790-9ddb-9be94dac50a2",
+          at: "2026-07-27T23:00:00Z",
+          v: 1,
+          entity: "source:source",
+          field: "kind",
+          value: "unknown-kind",
+          by: "person:reviewer",
+          reason: "test",
+        }),
+      ],
+      code: "unknown-source-kind",
+    },
   ])("reports $name", ({ records, code, knownExtractors }) => {
     const issues = verifyLog(
       records,
