@@ -1,6 +1,6 @@
 ---
 name: update-catalogue
-description: Run the catalogue update workflow when new inbox Documents must be pulled, extracted, ingested, verified, and optionally published. Use for requests to update or refresh the catalogue; stop for unresolved Source attribution, semantic extraction, AWS identity, or publication approval.
+description: Run the catalogue update workflow when inbox Documents must be pulled, extracted, ingested, verified, and normally published. Use for requests to update or refresh the catalogue; use local mode only for explicit preview, prepare, dry-run, or no-publish requests.
 ---
 
 # Update Catalogue
@@ -14,18 +14,25 @@ in [`extract-document`](../extract-document/SKILL.md), and publication policy st
 Work from the repository root. Read `README.md`, `CONTEXT.md`, `docs/decisions.md`, and the
 extraction skill before processing a file.
 
-Ask for these values when they are not already known:
+Select the mode from the request:
 
-- `PROFILE`: AWS CLI profile.
-- `EXPECTED_ACCOUNT`: AWS account that owns the deployment.
-- `BY`: person identity used for Source-kind judgements.
-- `STACK_NAME`: CloudFormation stack name. The reference stack is `event-database-inbox`; confirm
-  before using that default.
+- **publish** for `update`, `refresh`, `deploy`, or `publish`; this is an explicit request for the
+  normal end-to-end workflow, including its documented bounded cloud mutation;
+- **local** for `preview`, `prepare`, `dry-run`, `local`, or `no publish`;
+- **data** when the request explicitly limits work to pulling, extracting, ingesting, or verifying.
 
-The update operates in `us-east-1`. Run every AWS discovery command with the selected profile and
-region. Validate STS identity and stop for a root ARN, a wrong account, a missing profile, or a
-region mismatch. STS account output is not an expected-account decision; use the supplied account
-or ask the operator to confirm it.
+Read the ignored repository-root `.catalogue.local.json`. It supplies `aws.expectedAccount`,
+`aws.region`, `aws.preferredProfile`, `cloudFormation.stackName`, and
+`catalogue.operatorIdentity`. Validate these local defaults before asking the operator for anything.
+Use the preferred profile when it exists and resolves to the expected non-root account. Otherwise,
+select a configured non-root profile that resolves to that account; ask only when none or more than
+one does. The request delegates routine, evidence-backed Source-kind Judgements to the configured
+operator identity. Ask when the file or a required value is missing, discovered state contradicts
+it, or the work would attribute a genuinely semantic choice to a person.
+
+Run every AWS discovery command with the selected profile and configured region. Validate STS
+identity and stop for a root ARN, a wrong account, a missing profile, or a region mismatch. The
+local configuration, not STS output, establishes the expected account.
 
 Discover the stack with `describe-stacks`. Require a stable completed stack and outputs `DataBucket`
 and `Region`. Do not use the catalogue deployment skill's AWS commands to discover or access the
@@ -61,8 +68,11 @@ mechanism after interruption.
 
 For each pending file, follow `extract-document/SKILL.md`.
 
-Stop and ask when the Source slug or attribution is not established. Keep the same stable slug for
-every Document from the same publisher. Never label parser output as a person or model Extractor.
+Use Document evidence and existing catalogue records to establish Source attribution. Reuse the
+same stable slug for every Document from the same publisher. Evidence-backed attribution is a
+determination, not a confirmation gate. When one file remains genuinely unattributed, mark it
+blocked, process every independent file first, then ask one focused question about only that file.
+Never label parser output as a person or model Extractor.
 
 Write drafts outside the repository or in an ignored temporary directory. Do not write private
 source text into tracked files. Use the CLI as the only owner of identifiers, hashes, Artefact
@@ -82,15 +92,17 @@ After each successful ingest batch, verify:
 pnpm catalogue verify
 ```
 
-If the first Document establishes a Source kind, write a separate judgement draft and use the
-existing command:
+If the first Document establishes a Source kind, write a separate judgement draft under the
+configured operator identity and use the existing command:
 
 ```sh
 pnpm catalogue judge /tmp/source-kind.json
 pnpm catalogue verify
 ```
 
-Do not add a second Source-kind mutation path. If the kind is uncertain, stop and ask.
+Do not add a second Source-kind mutation path. Record a kind without asking when the Source's
+published role establishes exactly one kind. When more than one kind remains defensible, finish
+independent work and ask one focused semantic question.
 
 Report every semantic judgement, every field the Document did not supply, and every warning. A Span
 being present proves only that the cited text occurs; it does not prove that the value is correctly
@@ -98,24 +110,15 @@ interpreted.
 
 ## Build And Publish
 
-Run the full local gate and use a fresh temporary output as required by `deploy-catalogue`.
+In **data** mode, finish after the verified pending batch.
 
-For a local-only update, build and report the candidate without AWS mutation. For an explicit
-publication request, hand off to `deploy-catalogue`; do not copy its identity, stack, sync,
-invalidation, or HTTPS verification procedure here.
+In **local** mode, hand off to `deploy-catalogue` in dry-run mode. It owns the full local gate,
+candidate build, smoke test, and planned-sync report without AWS mutation.
 
-The publication lifecycle is:
-
-1. Check baseline deployment health if requested.
-2. Build the candidate once.
-3. Smoke-test that exact local candidate.
-4. Show the candidate tree and deployment scope.
-5. Obtain explicit publication approval.
-6. Publish through `deploy-catalogue`.
-7. Smoke-test the deployed release through that skill.
-
-Never run deployed smoke tests before publication and describe them as validation of the candidate;
-they can observe only the previous release.
+In **publish** mode, hand off the selected profile, expected account, stack, region, and authorization
+to `deploy-catalogue`. That skill exclusively owns the full gate, single candidate build, local smoke
+test, sync inspection, publication, invalidation, and remote verification. Do not build an earlier
+candidate or repeat its procedure here.
 
 ## Completion Report
 
@@ -136,6 +139,6 @@ Report:
 - full-gate duration;
 - deployment result only when publication was explicitly requested.
 
-Completion means `pending --json` is empty for the intended batch, `pnpm catalogue verify` passes,
-and either the candidate is locally verified or the delegated deployment skill reports successful
-publication and remote verification.
+Full completion means `pending --json` is empty for the intended batch, `pnpm catalogue verify`
+passes, and the selected mode completes. If a semantic blocker remains, complete and verify every
+independent file before reporting partial completion with the blocked filenames and precise questions.

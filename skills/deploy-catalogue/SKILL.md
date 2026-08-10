@@ -11,15 +11,21 @@ outputs and distribution state; it may mutate only objects in `CatalogueBucket` 
 CloudFront invalidation. It never accesses `DataBucket` or `WebsiteBucket`.
 
 Work from the repository root. Use **dry-run** for preview/check requests and **deploy** only for an
-explicit publish request. Dry-run performs discovery, checks, and a local build, then reports the
-planned sync without uploading, deleting, or invalidating.
+explicit `update`, `refresh`, `deploy`, or `publish` request, including authorization delegated by
+`update-catalogue`. That request authorizes the normal bounded mutation defined below; do not ask the
+operator to approve it a second time. Dry-run performs discovery, checks, and a local build, then
+reports the planned sync without uploading, deleting, or invalidating.
 
 ## Establish The Gate
 
-Select `PROFILE`; every AWS command must include `--profile "$PROFILE" --region us-east-1`.
-Validate identity with STS and hard stop for a root ARN, wrong account, or any region other than
-`us-east-1`. Record the commit and `git status --short`; list dirty paths and stop unless the user
-explicitly confirms publishing that exact tree.
+Use passed, already validated context from `update-catalogue`, or read the ignored repository-root
+`.catalogue.local.json`. It supplies the expected account, region, preferred profile, and stack name.
+Use the preferred profile when it exists and resolves to the expected non-root account; otherwise
+select the unique configured non-root profile for that account. Ask only when the file or a required
+value is missing, or profile selection is ambiguous. Every AWS command must include the selected
+profile and configured region. Validate identity with STS and hard stop for a root ARN, wrong
+account, or wrong region. Record the commit and `git status --short`; list dirty paths and ask before
+publishing a dirty tree.
 
 Discover the existing stack with `describe-stacks`. Require a complete, stable stack, no active
 operation, healthy deployed distribution, and outputs `CatalogueBucket`, `CatalogueUrl`,
@@ -53,11 +59,22 @@ Documents, evidence, retained Artefacts, and internal IDs. Serve the temporary o
 smoke-test the homepage and every generated HTML route. Remove the temporary directory when the
 run finishes.
 
-## Confirm And Publish
+## Inspect And Publish
 
 Show account/principal, profile, fixed region, commit/dirty state, healthy stack and distribution,
 literal `CatalogueBucket`, generated route count, exact sync scope, delete behavior, cache policy,
-and invalidation paths. Require explicit confirmation before the first mutation.
+and invalidation paths in progress output. Run the exact S3 sync command with `--dryrun` first and
+inspect every planned upload and deletion. Proceed without another confirmation when the tree is
+clean and the plan is confined to replacing generated catalogue assets in the literal
+`CatalogueBucket` root. Ask when the plan contains an unexpected object, destination, deletion, or
+scope change.
+
+```sh
+aws s3 sync "$OUTPUT/" "s3://$CATALOGUE_BUCKET/" --delete --exclude ".event-database-site.json" --cache-control "no-cache" --dryrun --profile "$PROFILE" --region us-east-1
+```
+
+Expected keys are the generated root files and content beneath `assets/`, `events/`, and `past/`.
+Treat a planned deletion outside those generator-owned paths as unexpected.
 
 Sync only to the root of `CatalogueBucket`. The ownership marker is local-only and must be excluded.
 Generated asset names are stable, so all published paths must revalidate rather than use immutable

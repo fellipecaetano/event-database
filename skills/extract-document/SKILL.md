@@ -51,9 +51,12 @@ directory only after the complete draft validates.
 distinct Sources: two Documents under different slugs would count as two independent
 witnesses agreeing.
 
-**If the Document carries no attribution, ask. Do not invent a slug.** The log is append-only,
-so a wrong one cannot be corrected. Ask whether the publisher curates independently or
-compiles from other listings — a compiler agreeing with its own sources is not corroboration.
+First use the Document's publisher marks, canonical origin, structured metadata, and existing
+catalogue Documents to establish attribution. Reusing an established slug for the same publisher is
+not a confirmation gate. When none of that evidence establishes a Source, mark the Document blocked
+for the orchestrating workflow to ask about after independent Documents are processed. A new slug
+requires evidence; the append-only log cannot repair an invented one. If independence affects the
+choice, ask whether the publisher curates independently or compiles other listings.
 
 A Source's kind (`venue-channel`, `ticketing`, `listings`, `promoter`, `aggregator`,
 `directory`, `self`) is recorded once, as an override on `source:<slug>`, never on the Document.
@@ -165,6 +168,10 @@ The ingest command must succeed before anything is considered ingested. `judge` 
 Judgement identifier and envelope and rejects references that would violate log integrity.
 The final command verifies every record, including records written outside the CLI.
 
+An update request may delegate routine Source-kind Judgements to its configured operator identity.
+Use that delegation only when the Source's published role establishes exactly one kind, such as a
+platform publishing ticket offers and purchase URLs. Ask when multiple kinds remain defensible.
+
 ## Re-extract a retained Document
 
 Use re-extraction when a better Extractor reads a Document already in the log. Do not ingest
@@ -203,7 +210,8 @@ Document *failed* to supply. The gaps matter as much as the content.
   Performance is a subject kind; half-structured keys now become cleanup later.
 - **Never treat comments as claims.** *"Pode colar menor de idade??"* is a stranger's question,
   not the Source speaking.
-- **Never guess a Source slug, or whether an account is a venue.** Ask.
+- **Require evidence for a Source slug and for whether an account is a Venue.** If evidence is
+  absent, mark that Document blocked and let the orchestrating workflow ask after independent work.
 
 ## Worked precedents
 
