@@ -10,7 +10,6 @@ import {
   commitIngest,
   createUuidV7Generator,
   judgementDraftSchema,
-  knownExtractorsFor,
   prepareIngest,
   prepareJudgement,
   prepareProposalDecision,
@@ -18,7 +17,6 @@ import {
   prepareReviewDecision,
   prepareVenueReviewDecision,
   createProductionFoldRules,
-  verifyLog,
   type Document,
   type JudgementDraft,
   type ProposalCase,
@@ -26,6 +24,7 @@ import {
   type ReviewSide,
   type VenueReviewCase,
   type VenueReviewSide,
+  type VerificationIssue,
 } from "@event-database/core";
 import {
   InvalidCatalogueError,
@@ -111,7 +110,6 @@ const defaultDependencies: CliDependencies = {
 };
 
 const foldRules = createProductionFoldRules();
-const knownExtractors = knownExtractorsFor(foldRules);
 const executableArgumentCount = 2;
 const reviewOptionArgumentCount = 2;
 const reviewUsage =
@@ -290,17 +288,18 @@ async function runReextract(
       randomBytes: dependencies.randomBytes,
     }),
   });
-  const issues = verifyLog([...existingRecords, ...observations], {
-    knownExtractors,
-  });
-  if (issues.length > 0) {
-    throw new Error(
-      `cannot re-extract: ${issues
-        .map((issue) => `${issue.code}: ${issue.message}`)
-        .join("; ")}`,
-    );
+  try {
+    await data.appendVerified(observations);
+  } catch (error) {
+    if (error instanceof InvalidCatalogueAppendError) {
+      throw new Error(
+        `cannot re-extract: ${error.issues
+          .map((issue) => `${issue.code}: ${issue.message}`)
+          .join("; ")}`,
+      );
+    }
+    throw error;
   }
-  await data.append(observations);
   dependencies.writeOut(
     `Re-extracted ${String(observations.length)} Observations.`,
   );
@@ -337,17 +336,18 @@ async function runJudge(
       randomBytes: dependencies.randomBytes,
     })(),
   });
-  const issues = verifyLog([...(await data.readLog()), judgement], {
-    knownExtractors,
-  });
-  if (issues.length > 0) {
-    throw new Error(
-      `cannot record Judgement: ${issues
-        .map((issue) => `${issue.code}: ${issue.message}`)
-        .join("; ")}`,
-    );
+  try {
+    await data.appendVerified([judgement]);
+  } catch (error) {
+    if (error instanceof InvalidCatalogueAppendError) {
+      throw new Error(
+        `cannot record Judgement: ${error.issues
+          .map((issue) => `${issue.code}: ${issue.message}`)
+          .join("; ")}`,
+      );
+    }
+    throw error;
   }
-  await data.append([judgement]);
   dependencies.writeOut(`Recorded ${judgement.type} ${judgement.id}.`);
   return 0;
 }
@@ -993,23 +993,22 @@ async function runIngest(
     }),
   });
 
-  const verificationIssues = verifyLog(
-    [...existingRecords, prepared.document, ...prepared.observations],
-    { knownExtractors },
-  );
-  if (verificationIssues.length > 0) {
-    reportVerificationIssues(verificationIssues, dependencies);
-    return 1;
-  }
-
-  await commitIngest(
-    await data.beginIngest({
+  let transaction;
+  try {
+    transaction = await data.beginIngest({
       sourcePath: inspectedArtefact.path,
       expectedHash: inspectedArtefact.hash,
       document: prepared.document,
       observations: prepared.observations,
-    }),
-  );
+    });
+  } catch (error) {
+    if (error instanceof InvalidCatalogueAppendError) {
+      reportVerificationIssues(error.issues, dependencies);
+      return 1;
+    }
+    throw error;
+  }
+  await commitIngest(transaction);
 
   const noun =
     prepared.observations.length === 1 ? "Observation" : "Observations";
@@ -1020,7 +1019,7 @@ async function runIngest(
 }
 
 function reportVerificationIssues(
-  issues: readonly ReturnType<typeof verifyLog>[number][],
+  issues: readonly VerificationIssue[],
   dependencies: Pick<CliDependencies, "writeError">,
 ): void {
   for (const issue of issues) {

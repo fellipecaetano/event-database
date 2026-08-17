@@ -59,6 +59,17 @@ it("is constructed from a repository root and keeps layout private", async () =>
   expect("layout" in data).toBe(false);
 });
 
+it("identifies paths owned by the catalogue data directory", async () => {
+  const root = await repository();
+  const data = new CatalogueDataDirectory(root);
+
+  await expect(data.ownsPath(join(root, "data"))).resolves.toBe(true);
+  await expect(
+    data.ownsPath(join(root, "data", "generated-site")),
+  ).resolves.toBe(true);
+  await expect(data.ownsPath(join(root, "site"))).resolves.toBe(false);
+});
+
 it("fully verifies records with Artefact hashes and production Extractors", async () => {
   const root = await repository();
   const heldDocument = document();

@@ -14,15 +14,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   createUuidV7Generator,
-  fold,
   hashText,
   logRecordSchema,
   parseJsonLines,
   verifyLog,
-  type FoldRules,
   type Judgement,
   type LogRecord,
 } from "@event-database/core";
+import { openCatalogue } from "@event-database/catalogue";
 
 import { runCli } from "./main.js";
 
@@ -34,12 +33,6 @@ const decidedAt = "2026-07-28T15:00:00Z";
 const decisionTime = "2026-07-28T15:00:00.000Z";
 const partition = "2026-07.jsonl";
 const reviewer = "person:reviewer";
-const rules: FoldRules = {
-  version: "test",
-  extractorTrust: { "tsv-parser@1": 1 },
-  sourceTrust: {},
-  sourceTrustOverrides: {},
-};
 const id = {
   documentA: "019fa69b-63ea-778a-adbf-9660b7ea94a6",
   documentB: "019fa69b-63ea-778b-953f-6f7a5bb62657",
@@ -882,17 +875,17 @@ describe("interactive review failure safety", () => {
 
 describe("interactive review integration", () => {
   it("appends a merge that the log can be reread and verified with", async () => {
-    const { root, records } = await makeRepository();
+    const { root } = await makeRepository();
     const { dependencies } = session(["s", "one show, two listings", "a"]);
 
     const exitCode = await runCli(interactiveArguments(root), dependencies);
 
     expect(exitCode).toBe(0);
-    const appended = await readJudgements(root);
-    const log = [...records, ...appended];
-    expect(verifyLog(log)).toEqual([]);
-    const catalogue = fold(log, { now: new Date(reviewedAt), rules });
-    expect(catalogue.events).toEqual([
+    const catalogue = await openCatalogue({
+      repositoryRoot: root,
+      at: new Date(reviewedAt),
+    });
+    expect(catalogue.events.all()).toEqual([
       expect.objectContaining({
         id: id.eventA,
         observationIds: [id.observationA, id.observationB],

@@ -111,7 +111,7 @@ Requirements:
 - `pending` without `--json` preserves current output.
 - `--json` emits `[]` and exits zero when there is no pending work.
 - Invalid arguments fail with usage and nonzero status.
-- Paths and hashes come from `LocalCatalogueData`; do not rescan or duplicate hashing logic.
+- Paths and hashes come from `CatalogueDataDirectory`; do not rescan or duplicate hashing logic.
 - Output must not include Document text or private Artefact contents.
 
 ### 3. Add the update orchestration skill

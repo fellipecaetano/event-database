@@ -1,4 +1,5 @@
 import {
+  access,
   appendFile as fsAppendFile,
   mkdir,
   mkdtemp,
@@ -21,7 +22,10 @@ import {
   type Observation,
 } from "@event-database/core";
 
-import { CatalogueDataDirectory } from "./maintenance.js";
+import {
+  CatalogueDataDirectory,
+  InvalidCatalogueAppendError,
+} from "./maintenance.js";
 
 const roots: string[] = [];
 const documentId = "019fa69b-63ea-778a-adbf-9660b7ea94a6";
@@ -61,7 +65,7 @@ function document(
     text_source: "retrieved",
     artefact,
     artefact_hash: digest,
-    text_hash: digest,
+    text_hash: hashBytes(new TextEncoder().encode("Evento")),
     text: "Evento",
   });
 }
@@ -73,7 +77,7 @@ function observation(documentId_: string = documentId): Observation {
     at,
     v: 1,
     document: documentId_,
-    extractor: "extractor@1",
+    extractor: "tsv-parser@1",
     subject: { kind: "event", id: eventId },
     claims: { title: { value: "Evento", spans: ["Evento"] } },
     extras: {},
@@ -225,6 +229,30 @@ describe("CatalogueDataDirectory", () => {
       "document",
       "observation",
     ]);
+  });
+
+  it("rejects an invalid ingest before moving its Artefact", async () => {
+    const root = await repository();
+    const sourcePath = join(root, "data", "inbox", "post.txt");
+    await writeFile(sourcePath, "source bytes");
+    const sourceHash = hashBytes(new TextEncoder().encode("source bytes"));
+    const data = new CatalogueDataDirectory(root);
+    const artefactDirectory = join(root, "data", "artefacts");
+    await rm(artefactDirectory, { recursive: true });
+
+    await expect(
+      data.beginIngest({
+        sourcePath,
+        expectedHash: sourceHash,
+        document: { ...document(), artefact_hash: sourceHash },
+        observations: [{ ...observation(), extractor: "unknown@1" }],
+      }),
+    ).rejects.toBeInstanceOf(InvalidCatalogueAppendError);
+    await expect(readFile(sourcePath, "utf8")).resolves.toBe("source bytes");
+    await expect(access(artefactDirectory)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await data.readLog()).toEqual([]);
   });
 
   it("rejects changed source bytes before moving the Artefact", async () => {

@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { GeneratedSiteFile } from "@event-database/catalogue-site";
+import { CatalogueDataDirectory } from "@event-database/catalogue/maintenance";
 
 const markerName = ".event-database-site.json";
 const marker = JSON.stringify({
@@ -43,7 +44,7 @@ export async function installStaticSite(
   files: readonly GeneratedSiteFile[],
 ): Promise<void> {
   const destination = await canonicalDestination(output);
-  assertSafeDestination(destination, await realpath(repository));
+  await assertSafeDestination(destination, await realpath(repository));
   await assertExistingDestinationIsOwned(destination);
   const parent = dirname(destination);
   await mkdir(parent, { recursive: true });
@@ -135,15 +136,19 @@ async function assertExistingDestinationIsOwned(
   }
 }
 
-function assertSafeDestination(destination: string, repository: string): void {
+async function assertSafeDestination(
+  destination: string,
+  repository: string,
+): Promise<void> {
+  const catalogueData = new CatalogueDataDirectory(repository);
   const protectedPaths = [
     resolve(sep),
     resolve(homedir()),
     resolve(process.cwd()),
     repository,
-    join(repository, "data"),
   ];
   if (
+    (await catalogueData.ownsPath(destination)) ||
     protectedPaths.some(
       (path) => path === destination || isWithin(destination, path),
     )

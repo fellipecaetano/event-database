@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,6 +49,35 @@ describe("installStaticSite", () => {
     await expect(readFile(join(output, "index.html"), "utf8")).resolves.toBe(
       "second",
     );
+  });
+
+  it("refuses output below the catalogue data directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "event-database-site-"));
+    paths.push(root);
+    const output = join(root, "data", "generated-site");
+
+    await expect(
+      installStaticSite(output, root, [
+        { path: "index.html", contents: "generated" },
+      ]),
+    ).rejects.toThrow("unsafe static site output directory");
+  });
+
+  it("refuses output below a symlinked catalogue data directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "event-database-site-"));
+    const externalData = await mkdtemp(
+      join(tmpdir(), "event-database-external-data-"),
+    );
+    paths.push(root, externalData);
+    await symlink(externalData, join(root, "data"));
+    const output = join(root, "data", "generated-site");
+    await mkdir(output);
+
+    await expect(
+      installStaticSite(output, root, [
+        { path: "index.html", contents: "generated" },
+      ]),
+    ).rejects.toThrow("unsafe static site output directory");
   });
 
   it("refuses symlinked outputs", async () => {

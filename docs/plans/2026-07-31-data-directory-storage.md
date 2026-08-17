@@ -51,7 +51,8 @@ preparation, judgement preparation, Fold, matching, and review policy.
 ### Phase 1: layout and references
 
 - Add and directly test `ArtefactReference` in core.
-- Add and directly test `CatalogueDataLayout` in the CLI.
+- Add and directly test `CatalogueDataLayout`; its final owner is
+  `packages/catalogue`.
 - Preserve existing serialized Artefact strings and partition names.
 - Validate inbox containment and retained Artefact path safety.
 - Reject symlinked inbox files, inbox directories, Artefact directories, and
@@ -59,8 +60,10 @@ preparation, judgement preparation, Fold, matching, and review policy.
 
 ### Phase 2: local data owner
 
-- Add the narrow core `CatalogueDataStore` port.
-- Replace the repository utility bag with `LocalCatalogueData`.
+- Consolidate physical ownership in `CatalogueDataDirectory` in
+  `packages/catalogue`. The temporary core `CatalogueDataStore` port and CLI
+  `LocalCatalogueData` implementation were removed once the catalogue package
+  became the single concrete owner.
 - Route log reads, appends, hash collection, and pending Artefact scans through
   the object.
 - Group logical batches by layout-derived partition and restore every touched
@@ -71,7 +74,7 @@ preparation, judgement preparation, Fold, matching, and review policy.
 
 ### Phase 3: ingest lifecycle
 
-- Create local ingest transactions only through `LocalCatalogueData`.
+- Create local ingest transactions only through `CatalogueDataDirectory`.
 - Keep the existing core `commitIngest` policy, but hide filesystem snapshot
   and restoration details inside the local adapter.
 - Re-check the source Artefact before moving it.

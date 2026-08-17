@@ -12,7 +12,15 @@ import {
   unlink,
 } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, join, relative, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 import {
   ArtefactReference,
@@ -82,6 +90,23 @@ export class CatalogueDataDirectory {
       options.appendFile ?? ((path, data) => fsAppendFile(path, data, "utf8"));
   }
 
+  async ownsPath(path: string): Promise<boolean> {
+    let dataRoot: string;
+    try {
+      dataRoot = await realpath(this.#layout.dataRoot);
+    } catch (error) {
+      if (!isMissingPath(error)) throw error;
+      dataRoot = resolve(this.#layout.dataRoot);
+    }
+    const pathRelative = relative(dataRoot, await canonicalPath(path));
+    return (
+      pathRelative === "" ||
+      (!pathRelative.startsWith(`..${sep}`) &&
+        pathRelative !== ".." &&
+        !isAbsolute(pathRelative))
+    );
+  }
+
   async readLog(): Promise<readonly LogRecord[]> {
     const records: LogRecord[] = [];
     for (const stream of ["documents", "observations", "judgements"] as const) {
@@ -117,11 +142,7 @@ export class CatalogueDataDirectory {
   }
 
   async appendVerified(records: readonly LogRecord[]): Promise<void> {
-    const existing = await this.readLog();
-    const rules = createProductionFoldRules();
-    const issues = verifyLog([...existing, ...records], {
-      knownExtractors: knownExtractorsFor(rules),
-    });
+    const issues = await this.verifyCandidate(records);
     if (issues.length > 0) throw new InvalidCatalogueAppendError(issues);
     await this.append(records);
   }
@@ -259,6 +280,13 @@ export class CatalogueDataDirectory {
         `Document Artefact must match inbox filename ${source.filename}`,
       );
     }
+
+    const issues = await this.verifyCandidate([
+      input.document,
+      ...input.observations,
+    ]);
+    if (issues.length > 0) throw new InvalidCatalogueAppendError(issues);
+
     const destination = this.#layout.artefactPath(reference);
     await assertPathAbsent(destination);
     await this.ensureSafeArtefactDirectory();
@@ -302,6 +330,16 @@ export class CatalogueDataDirectory {
         await rename(destination, source.path);
       },
     };
+  }
+
+  private async verifyCandidate(
+    records: readonly LogRecord[],
+  ): Promise<readonly VerificationIssue[]> {
+    const existing = await this.readLog();
+    const rules = createProductionFoldRules();
+    return verifyLog([...existing, ...records], {
+      knownExtractors: knownExtractorsFor(rules),
+    });
   }
 
   private partitionBatches(
@@ -440,6 +478,18 @@ function isMissingPath(error: unknown): boolean {
     "code" in error &&
     error.code === "ENOENT"
   );
+}
+
+async function canonicalPath(path: string): Promise<string> {
+  const absolute = resolve(path);
+  try {
+    return await realpath(absolute);
+  } catch (error) {
+    if (!isMissingPath(error)) throw error;
+    const parent = dirname(absolute);
+    if (parent === absolute) return absolute;
+    return join(await canonicalPath(parent), basename(absolute));
+  }
 }
 
 function isExistingPath(error: unknown): boolean {
