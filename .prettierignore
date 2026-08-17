@@ -1,5 +1,7 @@
 data/
 **/*.md
 **/dist/
+**/.next/
+**/out/
 node_modules/
 .pnpm-store/

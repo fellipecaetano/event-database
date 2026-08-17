@@ -164,6 +164,7 @@ For the structured ingestion procedure, read
   catalogue data-directory maintenance.
 - `packages/catalogue-site/` — deterministic public static-site generator.
 - `apps/cli/` — command-line boundary.
+- `apps/catalogue/` — Next.js catalogue application.
 - `apps/inbox/` — private browser gathering boundary and its AWS stack.
 - `docs/` — architecture decisions, ADRs, record-shape rationale, and working sessions.
 

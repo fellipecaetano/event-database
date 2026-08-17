@@ -7,10 +7,12 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/.next/**",
+      "**/out/**",
       "node_modules/**",
       "build/**",
-      ".next/**",
       "**/eslint.config.js",
+      "**/eslint.config.mjs",
       "vitest.config.ts",
       "packages/catalogue-site/assets/**/*.js",
     ],
