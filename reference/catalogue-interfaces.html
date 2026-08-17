@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Catalogue interface reference</title>
+    <link rel="stylesheet" href="../assets/lesson.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Catalogue interfaces</h1>
+      <p class="lede">Choose the narrowest import that can complete the job.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Need</th>
+            <th>Import</th>
+            <th>Main entry</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Read current Events and Venues</td>
+            <td><code>@event-database/catalogue</code></td>
+            <td><code>openCatalogue</code></td>
+          </tr>
+          <tr>
+            <td>Run internal matching review</td>
+            <td><code>@event-database/catalogue/review</code></td>
+            <td><code>openReviewCatalogue</code></td>
+          </tr>
+          <tr>
+            <td>Verify, append, or inspect inbox data</td>
+            <td><code>@event-database/catalogue/maintenance</code></td>
+            <td><code>CatalogueDataDirectory</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Ordinary read</h2>
+      <pre><code>const catalogue = await openCatalogue({ repositoryRoot, at });
+const events = catalogue.events.all();
+const event = catalogue.events.get(id); // Redirect-aware</code></pre>
+
+      <h2>Fact states</h2>
+      <table>
+        <tbody>
+          <tr>
+            <td>Property absent</td>
+            <td>No projected fact under that typed field.</td>
+          </tr>
+          <tr>
+            <td><code>state: "unknown"</code></td>
+            <td>A Source explicitly stated that the value is unsettled.</td>
+          </tr>
+          <tr>
+            <td><code>state: "known"</code></td>
+            <td>
+              Read <code>value</code>, <code>confidence</code>, and evidence.
+            </td>
+          </tr>
+          <tr>
+            <td>Typed property absent but <code>rawFact()</code> present</td>
+            <td>
+              A schema-valid Override produced the wrong runtime shape; preserve
+              it, do not invent a replacement.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Rules</h2>
+      <ul>
+        <li>Always pass an explicit <code>at</code> clock.</li>
+        <li>Open a fresh snapshot after a write.</li>
+        <li>Never serialize catalogue entities directly to public output.</li>
+        <li>
+          Use typed camelCase properties; <code>rawFact()</code> uses persisted
+          snake_case names.
+        </li>
+        <li>
+          Catch <code>InvalidCatalogueError</code> when a caller needs custom
+          diagnostics.
+        </li>
+      </ul>
+
+      <p>
+        <a href="../lessons/0001-query-the-catalogue.html"
+          >Return to the lesson</a
+        >
+      </p>
+    </main>
+  </body>
+</html>
