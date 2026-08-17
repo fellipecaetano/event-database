@@ -78,6 +78,7 @@ export type VerificationIssueCode =
   | "missing-entity"
   | "missing-observation"
   | "missing-superseded-observation"
+  | "redirect-cycle"
   | "text-hash-mismatch"
   | "ungrounded-span"
   | "unknown-source-kind"
@@ -247,7 +248,59 @@ export function verifyLog(
     verifyEntityReferences(record, observations, entities, issues);
   }
 
+  verifyRedirectCycles(records, issues);
+
   return issues;
+}
+
+function verifyRedirectCycles(
+  records: readonly LogRecord[],
+  issues: VerificationIssue[],
+): void {
+  const effective = new Map<string, Extract<LogRecord, { type: "redirect" }>>();
+  const redirects = records
+    .filter(
+      (record): record is Extract<LogRecord, { type: "redirect" }> =>
+        record.type === "redirect",
+    )
+    .toSorted((left, right) => left.at.localeCompare(right.at));
+  for (const redirect of redirects) {
+    effective.set(redirect.from, redirect);
+  }
+
+  const reported = new Set<string>();
+  const complete = new Set<string>();
+  for (const start of effective.keys()) {
+    if (complete.has(start)) {
+      continue;
+    }
+    const path: string[] = [];
+    const position = new Map<string, number>();
+    let current = start;
+    while (effective.has(current) && !complete.has(current)) {
+      const cycleStart = position.get(current);
+      if (cycleStart !== undefined) {
+        for (const entity of path.slice(cycleStart)) {
+          const redirect = effective.get(entity);
+          if (redirect !== undefined && !reported.has(redirect.id)) {
+            issues.push({
+              code: "redirect-cycle",
+              message: `Redirect participates in a cycle at ${entity}`,
+              recordId: redirect.id,
+            });
+            reported.add(redirect.id);
+          }
+        }
+        break;
+      }
+      position.set(current, path.length);
+      path.push(current);
+      current = effective.get(current)?.to ?? current;
+    }
+    for (const entity of path) {
+      complete.add(entity);
+    }
+  }
 }
 
 function verifyEntityReferences(

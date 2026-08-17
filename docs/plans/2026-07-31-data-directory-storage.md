@@ -1,6 +1,7 @@
 # Data Directory Storage Plan
 
-Status: phases 1-3 and remote inbox pull complete. Full data synchronization is deferred.
+Status: phases 1-3 and remote inbox pull complete. Ownership moved from the CLI to
+`packages/catalogue`; full data synchronization is deferred.
 
 ## Goal
 
@@ -23,25 +24,22 @@ the serialized value, and exposes the remote-relative key
 
 ### `CatalogueDataLayout`
 
-CLI-side value object constructed with a repository root. It owns the mapping
+Catalogue-package value object constructed with a repository root. It owns the mapping
 from records to `documents`, `observations`, or `judgements` monthly JSONL
 partitions, retained Artefact paths, and inbox paths. It performs no I/O.
 
-### `CatalogueDataStore`
+### `CatalogueDataDirectory`
 
-Core application port with only the storage operations required by current
-commands: read the complete log, atomically append a logical batch, and hash
-retained Artefacts. It is not a CRUD repository.
-
-### `LocalCatalogueData`
-
-CLI filesystem adapter implementing `CatalogueDataStore`. It owns all Node
+Catalogue-package filesystem owner. It owns all Node
 filesystem access below `data/`, including deterministic reads, partitioned
 appends, pending inbox Artefacts, Artefact hashing, and local ingest setup.
+The earlier core `CatalogueDataStore` port was removed when ownership moved:
+there is only one concrete store, so the port added indirection without a real
+alternative adapter.
 
 ### Private local ingest transaction
 
-Created only by `LocalCatalogueData`. It owns partition snapshots, Artefact
+Created only by `CatalogueDataDirectory`. It owns partition snapshots, Artefact
 movement, append order, and rollback. Raw `stat`, `truncate`, `unlink`, and
 `rename` operations do not escape the adapter.
 

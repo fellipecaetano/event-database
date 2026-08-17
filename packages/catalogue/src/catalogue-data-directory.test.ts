@@ -21,8 +21,7 @@ import {
   type Observation,
 } from "@event-database/core";
 
-import { CatalogueDataLayout } from "./catalogue-data-layout.js";
-import { LocalCatalogueData } from "./catalogue-repository.js";
+import { CatalogueDataDirectory } from "./maintenance.js";
 
 const roots: string[] = [];
 const documentId = "019fa69b-63ea-778a-adbf-9660b7ea94a6";
@@ -81,18 +80,18 @@ function observation(documentId_: string = documentId): Observation {
   });
 }
 
-describe("LocalCatalogueData", () => {
+describe("CatalogueDataDirectory", () => {
   it("treats a missing data directory as an empty catalogue", async () => {
     const root = await mkdtemp(join(tmpdir(), "catalogue-empty-"));
     roots.push(root);
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
 
     expect(await data.readLog()).toEqual([]);
   });
 
   it("reads partitioned records in deterministic directory and filename order", async () => {
     const root = await repository();
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
     const heldDocument = document();
     const heldObservation = observation();
     await writeFile(
@@ -109,7 +108,7 @@ describe("LocalCatalogueData", () => {
 
   it("hashes retained Artefacts and omits missing ones", async () => {
     const root = await repository();
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
     const held = document();
     const missing = document(
       "019fa69b-63ea-778d-964c-a63e474676a5",
@@ -124,7 +123,7 @@ describe("LocalCatalogueData", () => {
 
   it("atomically installs a remote inbox Artefact without overwriting bytes", async () => {
     const root = await repository();
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
     const expectedHash = hashBytes(new TextEncoder().encode("bytes"));
 
     expect(
@@ -143,7 +142,7 @@ describe("LocalCatalogueData", () => {
 
   it("appends a logical batch to its layout-derived partition", async () => {
     const root = await repository();
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
     const record = {
       type: "redirect" as const,
       id: "019fa69b-63ea-778d-964c-a63e474676a5",
@@ -167,7 +166,7 @@ describe("LocalCatalogueData", () => {
     const observationPath = join(root, "data", "observations", "2026-07.jsonl");
     await writeFile(documentPath, "document-before\n");
     await writeFile(observationPath, "observation-before\n");
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root), {
+    const data = new CatalogueDataDirectory(root, {
       appendFile: async (path, content) => {
         await fsAppendFile(path, content, "utf8");
         if (path === observationPath) {
@@ -187,7 +186,7 @@ describe("LocalCatalogueData", () => {
 
   it("lists only unheld inbox Artefacts in deterministic order", async () => {
     const root = await repository();
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
     await writeFile(join(root, "data", "inbox", "seen.txt"), "same");
     await writeFile(join(root, "data", "inbox", "new.txt"), "new");
 
@@ -204,7 +203,7 @@ describe("LocalCatalogueData", () => {
     const root = await repository();
     const sourcePath = join(root, "data", "inbox", "post.txt");
     await writeFile(sourcePath, "source bytes");
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
     const sourceHash = hashBytes(new TextEncoder().encode("source bytes"));
     const heldDocument = { ...document(), artefact_hash: sourceHash };
     const commit = await data.beginIngest({
@@ -232,7 +231,7 @@ describe("LocalCatalogueData", () => {
     const root = await repository();
     const sourcePath = join(root, "data", "inbox", "post.txt");
     await writeFile(sourcePath, "changed bytes");
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
     const originalHash = hashBytes(new TextEncoder().encode("original bytes"));
     const commit = await data.beginIngest({
       sourcePath,
@@ -252,7 +251,7 @@ describe("LocalCatalogueData", () => {
     const sourcePath = join(root, "data", "inbox", "post.txt");
     await writeFile(sourcePath, "source bytes");
     const observationPath = join(root, "data", "observations", "2026-07.jsonl");
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root), {
+    const data = new CatalogueDataDirectory(root, {
       appendFile: async (path, content) => {
         await fsAppendFile(path, content, "utf8");
         if (path === observationPath) {
@@ -286,7 +285,7 @@ describe("LocalCatalogueData", () => {
     const sourcePath = join(root, "data", "inbox", "post.txt");
     await writeFile(sourcePath, "source bytes");
     await writeFile(join(root, "data", "artefacts", "post.txt"), "held bytes");
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
 
     await expect(
       data.beginIngest({
@@ -305,7 +304,7 @@ describe("LocalCatalogueData", () => {
     const root = await repository();
     const sourcePath = join(root, "data", "inbox", "post.txt");
     await writeFile(sourcePath, "source bytes");
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
 
     await expect(
       data.beginIngest({
@@ -323,7 +322,7 @@ describe("LocalCatalogueData", () => {
     const sourcePath = join(root, "data", "inbox", "post.txt");
     await writeFile(target, "outside bytes");
     await symlink(target, sourcePath);
-    const data = new LocalCatalogueData(new CatalogueDataLayout(root));
+    const data = new CatalogueDataDirectory(root);
 
     await expect(data.inspectInboxArtefact(sourcePath)).rejects.toThrow(
       "regular file",

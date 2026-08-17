@@ -7,6 +7,13 @@
     "moduleResolution": "NodeNext",
     "paths": {
       "@event-database/core": ["./packages/core/src/index.ts"],
+      "@event-database/catalogue": ["./packages/catalogue/src/index.ts"],
+      "@event-database/catalogue/review": [
+        "./packages/catalogue/src/review.ts"
+      ],
+      "@event-database/catalogue/maintenance": [
+        "./packages/catalogue/src/maintenance.ts"
+      ],
       "@event-database/catalogue-site": [
         "./packages/catalogue-site/src/index.ts"
       ]

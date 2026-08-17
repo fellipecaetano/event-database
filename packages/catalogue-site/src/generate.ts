@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import type { Catalogue } from "@event-database/core";
+import type { CatalogueStore } from "@event-database/catalogue";
 import { transform } from "esbuild";
 
 import { messagesFor, type Locale } from "./locales.js";
@@ -32,7 +32,7 @@ export interface GeneratedCatalogueSite {
 }
 
 export async function generateCatalogueSite(
-  catalogue: Catalogue,
+  catalogue: CatalogueStore,
   options: CatalogueSiteOptions,
 ): Promise<GeneratedCatalogueSite> {
   if (options.siteName.trim() === "")

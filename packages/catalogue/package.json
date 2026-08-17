@@ -1,0 +1,33 @@
+{
+  "name": "@event-database/catalogue",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./review": {
+      "development": "./src/review.ts",
+      "types": "./dist/review.d.ts",
+      "default": "./dist/review.js"
+    },
+    "./maintenance": {
+      "development": "./src/maintenance.ts",
+      "types": "./dist/maintenance.d.ts",
+      "default": "./dist/maintenance.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@event-database/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2"
+  }
+}

@@ -572,6 +572,22 @@ under **[Still open](#still-open)** at the end.
       Separate packages rather than separate folders is what makes ADR 0005's boundary real:
       something importing the core gets none of the CLI's dependencies. Within one package that
       survives only by discipline.
+- [x] **Current catalogue access has one package seam.** `packages/catalogue` owns opening the
+      local append-only log as a verified, clock-pinned, immutable current-state store. Ordinary
+      readers use its root export; evidence-bearing review and raw append-only maintenance use
+      explicit `/review` and `/maintenance` subpaths, so public-site generation cannot acquire
+      privileged capabilities by accident.
+
+      Core remains the pure rules implementation: schemas, verification, Fold, matching, review
+      derivation, and append preparation. The catalogue package composes those rules with the local
+      data directory, typed fact access, extras, indexes, and Redirect-aware lookup. The static-site
+      package consumes only this current-state interface and still creates its own structurally
+      public-safe projection.
+
+      This replaces the former split where the CLI owned the only JSONL reader and each consumer
+      assembled read, verify, Fold, and indexing itself. The unused `CatalogueDataStore` port was
+      removed: there is one concrete local store, tested with temporary directories, and a remote
+      seam will be introduced only if a second real adapter exists.
 - [x] **The stack is TypeScript**, and the Python in `scripts/` will be ported. This is a
       preference decision, not an evidence-driven one, and worth saying so plainly: the
       evidence pointed the other way. 264 lines of working stdlib-only Python existed, `src/`

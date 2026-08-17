@@ -158,8 +158,10 @@ For the structured ingestion procedure, read
 ## Layout
 
 - `data/` — append-only catalogue log, retained Artefacts, and inbox.
-- `packages/core/` — schemas, verification, ingestion primitives, Fold, matching, and review
-  cases.
+- `packages/core/` — schemas, verification, ingestion primitives, Fold rules, matching, and review
+  case derivation.
+- `packages/catalogue/` — verified current-state queries, internal review access, and local
+  catalogue data-directory maintenance.
 - `packages/catalogue-site/` — deterministic public static-site generator.
 - `apps/cli/` — command-line boundary.
 - `apps/inbox/` — private browser gathering boundary and its AWS stack.

@@ -5,7 +5,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 
-import type { InboxArtefactInstallation } from "./catalogue-repository.js";
+import type { InboxArtefactInstallation } from "@event-database/catalogue/maintenance";
 
 const inboxPrefix = "inbox/";
 const maximumFilenameBytes = 255;

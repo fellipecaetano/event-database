@@ -70,6 +70,24 @@ export default tseslint.config(
   },
   inboxLintConfig,
   {
+    files: ["packages/catalogue-site/src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            "@event-database/core",
+            "@event-database/core/*",
+            "@event-database/catalogue/review",
+            "@event-database/catalogue/review/*",
+            "@event-database/catalogue/maintenance",
+            "@event-database/catalogue/maintenance/*",
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.test.ts"],
     rules: {
       "@typescript-eslint/no-magic-numbers": "off",

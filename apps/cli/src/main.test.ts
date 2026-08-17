@@ -171,6 +171,41 @@ describe("build-site command", () => {
     expect(exitCode).toBe(1);
     expect(errors[0]).toContain("--output");
   });
+
+  it("preserves the verification failure diagnostic", async () => {
+    const root = await makeRepository({
+      type: "observation",
+      id: observationId,
+      at,
+      v: 1,
+      document: documentId,
+      extractor: "tsv-parser@1",
+      subject: { kind: "event", id: "019fa69b-63ea-778e-8595-cd28e40852d1" },
+      claims: {},
+      extras: {},
+    });
+    const errors: string[] = [];
+
+    const exitCode = await runCli(
+      [
+        "build-site",
+        root,
+        "--output",
+        join(root, "site"),
+        "--site-name",
+        "Agenda",
+      ],
+      {
+        writeOut: () => undefined,
+        writeError: (message) => errors.push(message),
+      },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(errors).toEqual([
+      "cannot build site: log has 1 verification issue(s)",
+    ]);
+  });
 });
 
 describe("inbox command", () => {
@@ -557,6 +592,23 @@ describe("reextract command", () => {
 });
 
 describe("review command", () => {
+  it("reports the existing review-queue diagnostic for an invalid log", async () => {
+    const root = await makeRepository(
+      validDocument({ text_hash: "0".repeat(64) }),
+    );
+    const errors: string[] = [];
+
+    const exitCode = await runCli(["review", "--repository", root], {
+      writeOut: () => undefined,
+      writeError: (message) => errors.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(errors).toEqual([
+      "cannot build review queue: log has 1 verification issue(s)",
+    ]);
+  });
+
   it("uses the CLI clock when no timestamp is supplied", async () => {
     const root = await makeRepository(validDocument({ text: "event" }));
     const output: string[] = [];

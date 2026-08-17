@@ -3,13 +3,13 @@ import {
   parseEntityReference,
 } from "./entity-reference.js";
 import { projectExistence } from "./existence-projection.js";
-import { resolveFacts } from "./fact-resolution.js";
+import { resolveExtras, resolveFacts } from "./fact-resolution.js";
 import {
   buildRedirects,
   resolveRedirect,
   selectObservationMatches,
 } from "./identity-resolution.js";
-import { indexLog } from "./log-index.js";
+import { indexLog, type LogIndex } from "./log-index.js";
 import { selectReadings } from "./reading-selection.js";
 import type { JsonValue, LogRecord, Observation } from "./records.js";
 
@@ -49,6 +49,7 @@ export interface ProjectedEntity {
   readonly id: string;
   readonly observationIds: string[];
   readonly facts: Readonly<Record<string, ProjectedFact>>;
+  readonly extras: Readonly<Record<string, ProjectedFact>>;
   readonly staleValidationIds: string[];
 }
 
@@ -60,9 +61,15 @@ export interface Catalogue {
 
 export function fold(
   records: readonly LogRecord[],
+  options: FoldOptions,
+): Catalogue {
+  return foldFromIndex(indexLog(records), options);
+}
+
+export function foldFromIndex(
+  index: LogIndex,
   { now, rules }: FoldOptions,
 ): Catalogue {
-  const index = indexLog(records);
   const redirects = buildRedirects(index);
   const matches = selectObservationMatches(index);
   const groups = new Map<string, Observation[]>();
@@ -93,6 +100,14 @@ export function fold(
       redirects,
       rules,
     );
+    const extras = resolveExtras(
+      entity,
+      selectedObservations,
+      index.documentsById,
+      index.records,
+      redirects,
+      rules,
+    );
     const { existence, staleValidationIds } = projectExistence(
       entity,
       selectedObservations,
@@ -108,6 +123,7 @@ export function fold(
         .map((observation) => observation.id)
         .sort(),
       facts: { ...facts, existence },
+      extras,
       staleValidationIds,
     };
     if (kind === "event") {

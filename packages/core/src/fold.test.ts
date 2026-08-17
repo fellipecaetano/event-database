@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   fold,
+  foldFromIndex,
+  indexLog,
   logRecordSchema,
   type FoldRules,
   type LogRecord,
@@ -59,6 +61,7 @@ function observation({
   at = "2026-07-27T22:00:00Z",
   extractor = "model@1",
   supersedes,
+  extras = {},
 }: {
   readonly id: string;
   readonly documentId: string;
@@ -67,6 +70,7 @@ function observation({
   readonly at?: string;
   readonly extractor?: string;
   readonly supersedes?: string;
+  readonly extras?: Record<string, unknown>;
 }): LogRecord {
   return logRecordSchema.parse({
     type: "observation",
@@ -77,12 +81,32 @@ function observation({
     extractor,
     subject: { kind: "event", id: eventId },
     claims: { title: { value: title, spans: [title] } },
-    extras: {},
+    extras,
     ...(supersedes === undefined ? {} : { supersedes }),
   });
 }
 
 describe("fold", () => {
+  it.each([
+    { name: "an empty log", records: [] },
+    {
+      name: "an ordinary log",
+      records: [
+        document(ids.documentA, "source-a"),
+        observation({
+          id: ids.observationA,
+          documentId: ids.documentA,
+          eventId: ids.eventA,
+          title: "Evento",
+        }),
+      ],
+    },
+  ])("is equivalent to foldFromIndex for $name", ({ records }) => {
+    expect(foldFromIndex(indexLog(records), { now, rules })).toEqual(
+      fold(records, { now, rules }),
+    );
+  });
+
   it("projects an unmatched Event Observation under its intrinsic id", () => {
     const catalogue = fold(
       [
@@ -151,12 +175,57 @@ describe("fold", () => {
 
     const catalogue = fold(records, { now, rules });
 
+    expect(foldFromIndex(indexLog(records), { now, rules })).toEqual(catalogue);
     expect(catalogue.events).toHaveLength(1);
     expect(catalogue.events[0]).toEqual(
       expect.objectContaining({
         id: ids.eventA,
         observationIds: [ids.observationA, ids.observationB],
       }),
+    );
+  });
+
+  it("keeps fold and foldFromIndex equivalent for an invalid Redirect cycle", () => {
+    const records = [
+      document(ids.documentA, "source-a"),
+      document(ids.documentB, "source-b"),
+      observation({
+        id: ids.observationA,
+        documentId: ids.documentA,
+        eventId: ids.eventA,
+        title: "Evento",
+      }),
+      observation({
+        id: ids.observationB,
+        documentId: ids.documentB,
+        eventId: ids.eventB,
+        title: "Evento",
+      }),
+      logRecordSchema.parse({
+        type: "redirect",
+        id: ids.judgementA,
+        at: "2026-07-27T23:00:00Z",
+        v: 1,
+        from: `event:${ids.eventA}`,
+        to: `event:${ids.eventB}`,
+        reason: "merge",
+      }),
+      logRecordSchema.parse({
+        type: "redirect",
+        id: ids.judgementB,
+        at: "2026-07-27T23:01:00Z",
+        v: 1,
+        from: `event:${ids.eventB}`,
+        to: `event:${ids.eventA}`,
+        reason: "merge",
+      }),
+    ];
+
+    expect(() => fold(records, { now, rules })).toThrow(
+      `redirect cycle at event:${ids.eventA}`,
+    );
+    expect(() => foldFromIndex(indexLog(records), { now, rules })).toThrow(
+      `redirect cycle at event:${ids.eventA}`,
     );
   });
 
@@ -282,6 +351,171 @@ describe("fold", () => {
         confidence: "validated",
         evidence: [ids.judgementA],
       }),
+    );
+  });
+
+  it("projects same-named core claims and extras separately with core Judgement precedence", () => {
+    const records = [
+      document(ids.documentA, "source-a"),
+      observation({
+        id: ids.observationA,
+        documentId: ids.documentA,
+        eventId: ids.eventA,
+        title: "Evento",
+        extras: { title: { value: "Extra title", spans: ["Evento"] } },
+      }),
+      logRecordSchema.parse({
+        type: "override",
+        id: ids.judgementA,
+        at: "2026-07-27T23:00:00Z",
+        v: 1,
+        entity: `event:${ids.eventA}`,
+        field: "title",
+        value: "Judged title",
+        by: "person:reviewer",
+        reason: "confirmed directly",
+      }),
+    ];
+
+    const event = fold(records, { now, rules }).events[0];
+
+    expect(event?.facts["title"]).toEqual(
+      expect.objectContaining({
+        value: "Judged title",
+        confidence: "validated",
+      }),
+    );
+    expect(event?.extras["title"]).toEqual(
+      expect.objectContaining({
+        value: "Extra title",
+        confidence: "single-source",
+        evidence: [ids.observationA],
+      }),
+    );
+  });
+
+  it("applies a Judgement to an extra when no same-named core claim exists", () => {
+    const records = [
+      document(ids.documentA, "source-a"),
+      observation({
+        id: ids.observationA,
+        documentId: ids.documentA,
+        eventId: ids.eventA,
+        title: "Evento",
+        extras: { dress_code: { value: "casual", spans: ["Evento"] } },
+      }),
+      logRecordSchema.parse({
+        type: "override",
+        id: ids.judgementA,
+        at: "2026-07-27T23:00:00Z",
+        v: 1,
+        entity: `event:${ids.eventA}`,
+        field: "dress_code",
+        value: "formal",
+        by: "person:reviewer",
+        reason: "confirmed directly",
+      }),
+    ];
+
+    const event = fold(records, { now, rules }).events[0];
+
+    expect(event?.facts["dress_code"]).toBeUndefined();
+    expect(event?.extras["dress_code"]).toEqual({
+      state: "known",
+      value: "formal",
+      confidence: "validated",
+      evidence: [ids.judgementA],
+    });
+  });
+
+  it("preserves nested JSON and stated unknown extras", () => {
+    const event = fold(
+      [
+        document(ids.documentA, "source-a"),
+        observation({
+          id: ids.observationA,
+          documentId: ids.documentA,
+          eventId: ids.eventA,
+          title: "Evento",
+          extras: {
+            access: {
+              value: { step_free: true, entrances: ["front", "side"] },
+              spans: ["Evento"],
+            },
+            age_limit: { unknown: true, spans: ["Evento"] },
+          },
+        }),
+      ],
+      { now, rules },
+    ).events[0];
+
+    expect(event?.extras["access"]).toEqual(
+      expect.objectContaining({
+        state: "known",
+        value: { step_free: true, entrances: ["front", "side"] },
+      }),
+    );
+    expect(event?.extras["age_limit"]).toEqual({
+      state: "unknown",
+      confidence: "single-source",
+      evidence: [ids.observationA],
+    });
+  });
+
+  it("treats same-Source extra changes as Corrections and corroborates distinct Sources", () => {
+    const corrected = fold(
+      [
+        document(ids.documentA, "source-a"),
+        document(ids.documentB, "source-a", "2026-07-27T23:00:00Z"),
+        observation({
+          id: ids.observationA,
+          documentId: ids.documentA,
+          eventId: ids.eventA,
+          title: "Evento",
+          extras: { room: { value: "A", spans: ["Evento"] } },
+        }),
+        observation({
+          id: ids.observationB,
+          documentId: ids.documentB,
+          eventId: ids.eventA,
+          title: "Evento",
+          at: "2026-07-27T23:00:00Z",
+          extras: { room: { value: "B", spans: ["Evento"] } },
+        }),
+      ],
+      { now, rules },
+    ).events[0]?.extras["room"];
+    const corroborated = fold(
+      [
+        document(ids.documentA, "source-a"),
+        document(ids.documentB, "source-b"),
+        observation({
+          id: ids.observationA,
+          documentId: ids.documentA,
+          eventId: ids.eventA,
+          title: "Evento",
+          extras: { room: { value: "A", spans: ["Evento"] } },
+        }),
+        observation({
+          id: ids.observationB,
+          documentId: ids.documentB,
+          eventId: ids.eventA,
+          title: "Evento",
+          extras: { room: { value: "A", spans: ["Evento"] } },
+        }),
+      ],
+      { now, rules },
+    ).events[0]?.extras["room"];
+
+    expect(corrected).toEqual(
+      expect.objectContaining({
+        value: "B",
+        confidence: "single-source",
+        evidence: [ids.observationB],
+      }),
+    );
+    expect(corroborated).toEqual(
+      expect.objectContaining({ confidence: "corroborated" }),
     );
   });
 

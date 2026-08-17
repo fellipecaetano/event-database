@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 
 import type {
-  Catalogue,
-  ProjectedEntity,
-  ProjectedFact,
-} from "@event-database/core";
+  CatalogueEvent,
+  CatalogueFact,
+  CatalogueStore,
+  EventFacts,
+} from "@event-database/catalogue";
 
 export type EventPeriod = "future" | "past";
 
@@ -51,13 +52,14 @@ const maximumSecond = 59;
 const minutesPerHour = 60;
 const offsetComponentWidth = 2;
 
-export function buildSiteModel(catalogue: Catalogue): SiteModel {
+export function buildSiteModel(catalogue: CatalogueStore): SiteModel {
   const now = new Date(catalogue.asOf);
   const today = dateInSaoPaulo(now);
   const diagnostics: { code: string; message: string }[] = [];
   const events: PublicEvent[] = [];
 
-  for (const entity of catalogue.events) {
+  const catalogueEvents = catalogue.events.all();
+  for (const entity of catalogueEvents) {
     const event = projectEvent(entity, now, today, diagnostics);
     if (event !== undefined) {
       events.push(event);
@@ -82,20 +84,20 @@ export function buildSiteModel(catalogue: Catalogue): SiteModel {
     future,
     pastByYear,
     diagnostics,
-    excluded: catalogue.events.length - events.length,
+    excluded: catalogueEvents.length - events.length,
   };
 }
 
 function projectEvent(
-  entity: ProjectedEntity,
+  entity: CatalogueEvent,
   now: Date,
   today: string,
   diagnostics: { code: string; message: string }[],
 ): PublicEvent | undefined {
-  if (knownBoolean(entity.facts["existence"]) !== true) {
+  if (knownBoolean(entity.facts.existence) !== true) {
     return undefined;
   }
-  for (const field of ["date", "start", "showtime", "end"]) {
+  for (const field of ["date", "start", "showtime", "end"] as const) {
     const fact = entity.facts[field];
     if (fact?.state === "known" && knownDateTime(fact) === undefined) {
       diagnostics.push({
@@ -112,8 +114,8 @@ function projectEvent(
     });
     return undefined;
   }
-  const title = knownString(entity.facts["title"]);
-  const lineup = knownStrings(entity.facts["lineup"]);
+  const title = knownString(entity.facts.title);
+  const lineup = knownStrings(entity.facts.lineup);
   if (title === undefined && lineup.length === 0) {
     diagnostics.push({
       code: "unpublishable-event",
@@ -121,9 +123,9 @@ function projectEvent(
     });
     return undefined;
   }
-  const start = knownDateTime(entity.facts["start"]);
-  const showtime = knownDateTime(entity.facts["showtime"]);
-  const end = knownDateTime(entity.facts["end"]);
+  const start = knownDateTime(entity.facts.start);
+  const showtime = knownDateTime(entity.facts.showtime);
+  const end = knownDateTime(entity.facts.end);
   const startInstant = instantFor(start);
   const endInstant = instantFor(end);
   if (
@@ -136,7 +138,7 @@ function projectEvent(
   if (
     date !== dateFor(start) &&
     start !== undefined &&
-    knownString(entity.facts["date"]) !== undefined
+    knownString(entity.facts.date) !== undefined
   ) {
     diagnostics.push({
       code: "temporal-disagreement",
@@ -146,7 +148,7 @@ function projectEvent(
   if (
     date !== dateFor(showtime) &&
     showtime !== undefined &&
-    knownString(entity.facts["date"]) !== undefined
+    knownString(entity.facts.date) !== undefined
   ) {
     diagnostics.push({
       code: "temporal-disagreement",
@@ -161,10 +163,10 @@ function projectEvent(
       : date >= today
         ? "future"
         : "past";
-  const price = knownNumber(entity.facts["price_from"]);
+  const price = knownNumber(entity.facts.priceFrom);
   const currency =
-    entity.facts["price_from"]?.state === "known"
-      ? entity.facts["price_from"].currency
+    entity.facts.priceFrom?.state === "known"
+      ? entity.facts.priceFrom.currency
       : undefined;
   if (price !== undefined && currency === undefined) {
     diagnostics.push({
@@ -172,16 +174,16 @@ function projectEvent(
       message: "price has no currency",
     });
   }
-  const venue = knownString(entity.facts["venue_name"]);
+  const venue = knownString(entity.facts.venueName);
   if (venue === undefined) {
     diagnostics.push({
       code: "unknown-venue",
       message: "published an Event whose Venue is not known",
     });
   }
-  const ticketUrl = safeTicketUrl(knownString(entity.facts["ticket_url"]));
+  const ticketUrl = safeTicketUrl(knownString(entity.facts.ticketUrl));
   if (
-    knownString(entity.facts["ticket_url"]) !== undefined &&
+    knownString(entity.facts.ticketUrl) !== undefined &&
     ticketUrl === undefined
   ) {
     diagnostics.push({
@@ -189,9 +191,9 @@ function projectEvent(
       message: "omitted an unsafe ticket URL",
     });
   }
-  const ticketsExist = knownBoolean(entity.facts["tickets_exist"]);
-  const ticketsAtDoor = knownBoolean(entity.facts["tickets_at_door"]);
-  const status = knownStatus(entity.facts["status"]);
+  const ticketsExist = knownBoolean(entity.facts.ticketsExist);
+  const ticketsAtDoor = knownBoolean(entity.facts.ticketsAtDoor);
+  const status = knownStatus(entity.facts.status);
   return {
     id: publicEventId(entity.id),
     title: title ?? lineup.join(" + "),
@@ -203,7 +205,7 @@ function projectEvent(
     ...(end === undefined ? {} : { end: normalizeDateTime(end) }),
     venue: venue ?? "Local a confirmar",
     lineup,
-    genres: knownStrings(entity.facts["genre_words"]),
+    genres: knownStrings(entity.facts.genreWords),
     ...(price === undefined ? {} : { price }),
     ...(currency === undefined ? {} : { currency }),
     ...(ticketUrl === undefined ? {} : { ticketUrl }),
@@ -219,35 +221,45 @@ function projectEvent(
   };
 }
 
-function knownValue(fact: ProjectedFact | undefined): unknown {
+function knownValue(fact: CatalogueFact<unknown> | undefined): unknown {
   return fact?.state === "known" ? fact.value : undefined;
 }
-function knownString(fact: ProjectedFact | undefined): string | undefined {
+function knownString(
+  fact: CatalogueFact<unknown> | undefined,
+): string | undefined {
   const value = knownValue(fact);
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
-function knownStrings(fact: ProjectedFact | undefined): readonly string[] {
+function knownStrings(
+  fact: CatalogueFact<unknown> | undefined,
+): readonly string[] {
   const value = knownValue(fact);
   return Array.isArray(value) && value.every((item) => typeof item === "string")
     ? value
     : [];
 }
-function knownNumber(fact: ProjectedFact | undefined): number | undefined {
+function knownNumber(
+  fact: CatalogueFact<unknown> | undefined,
+): number | undefined {
   const value = knownValue(fact);
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
     : undefined;
 }
-function knownBoolean(fact: ProjectedFact | undefined): boolean | undefined {
+function knownBoolean(
+  fact: CatalogueFact<unknown> | undefined,
+): boolean | undefined {
   const value = knownValue(fact);
   return typeof value === "boolean" ? value : undefined;
 }
-function knownDateTime(fact: ProjectedFact | undefined): string | undefined {
+function knownDateTime(
+  fact: CatalogueFact<unknown> | undefined,
+): string | undefined {
   const value = knownString(fact);
   return value !== undefined && isValidDateTime(value) ? value : undefined;
 }
 function knownStatus(
-  fact: ProjectedFact | undefined,
+  fact: CatalogueFact<unknown> | undefined,
 ): PublicEvent["status"] | undefined {
   const value = knownString(fact);
   return value === "scheduled" ||
@@ -257,14 +269,12 @@ function knownStatus(
     ? value
     : undefined;
 }
-function eventDate(
-  facts: Readonly<Record<string, ProjectedFact>>,
-): string | undefined {
+function eventDate(facts: EventFacts): string | undefined {
   return (
-    knownDateTime(facts["date"]) ??
-    dateFor(knownDateTime(facts["start"])) ??
-    dateFor(knownDateTime(facts["showtime"])) ??
-    dateFor(knownDateTime(facts["end"]))
+    knownDateTime(facts.date) ??
+    dateFor(knownDateTime(facts.start)) ??
+    dateFor(knownDateTime(facts.showtime)) ??
+    dateFor(knownDateTime(facts.end))
   );
 }
 function dateFor(value: string | undefined): string | undefined {

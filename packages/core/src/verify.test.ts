@@ -246,4 +246,51 @@ describe("verifyLog", () => {
     );
     expect(verifyLog([document, observation, creation])).toEqual([]);
   });
+
+  it("reports Redirect cycles alongside other verification issues", () => {
+    const otherSubjectId = "019fa69b-63ea-7794-93e2-9b0684b5f873";
+    const otherObservation = {
+      ...observation,
+      id: "019fa69b-63ea-7795-93e2-9b0684b5f873",
+      subject: { kind: "event" as const, id: otherSubjectId },
+    };
+    const redirectA = logRecordSchema.parse({
+      type: "redirect",
+      id: "019fa69b-63ea-7796-93e2-9b0684b5f873",
+      at: "2026-07-27T23:00:00Z",
+      v: 1,
+      from: `event:${subjectId}`,
+      to: `event:${otherSubjectId}`,
+      reason: "merge",
+    });
+    const redirectB = logRecordSchema.parse({
+      ...redirectA,
+      id: "019fa69b-63ea-7797-93e2-9b0684b5f873",
+      at: "2026-07-27T23:01:00Z",
+      from: `event:${otherSubjectId}`,
+      to: `event:${subjectId}`,
+    });
+
+    const issues = verifyLog([
+      { ...document, text: "changed" },
+      observation,
+      otherObservation,
+      redirectA,
+      redirectB,
+    ]);
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "text-hash-mismatch" }),
+        expect.objectContaining({
+          code: "redirect-cycle",
+          recordId: redirectA.id,
+        }),
+        expect.objectContaining({
+          code: "redirect-cycle",
+          recordId: redirectB.id,
+        }),
+      ]),
+    );
+  });
 });

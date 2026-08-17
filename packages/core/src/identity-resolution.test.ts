@@ -77,6 +77,33 @@ describe("redirect resolution", () => {
       `redirect cycle at event:${ids.eventA}`,
     );
   });
+
+  it("uses later log order for competing redirects at the same time", () => {
+    const index = indexLog([
+      record({
+        type: "redirect",
+        id: ids.judgementA,
+        at: "2026-07-28T12:00:00Z",
+        v: 1,
+        from: `event:${ids.eventA}`,
+        to: `event:${ids.eventB}`,
+        reason: "First destination",
+      }),
+      record({
+        type: "redirect",
+        id: ids.judgementB,
+        at: "2026-07-28T12:00:00Z",
+        v: 1,
+        from: `event:${ids.eventA}`,
+        to: `event:${ids.eventC}`,
+        reason: "Later log entry",
+      }),
+    ]);
+
+    expect(buildRedirects(index).get(`event:${ids.eventA}`)).toBe(
+      `event:${ids.eventC}`,
+    );
+  });
 });
 
 describe("selectObservationMatches", () => {

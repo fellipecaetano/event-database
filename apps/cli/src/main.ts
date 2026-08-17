@@ -7,14 +7,8 @@ import { pathToFileURL } from "node:url";
 
 import {
   LogParseError,
-  buildProposalCaseFromWorkspace,
-  buildReviewCaseFromWorkspace,
-  buildVenueReviewCaseFromWorkspace,
-  buildReviewQueueFromWorkspace,
   commitIngest,
   createUuidV7Generator,
-  createReviewWorkspace,
-  documentSourceName,
   judgementDraftSchema,
   knownExtractorsFor,
   prepareIngest,
@@ -23,27 +17,36 @@ import {
   prepareReextraction,
   prepareReviewDecision,
   prepareVenueReviewDecision,
-  reviewCaseDocuments,
   createProductionFoldRules,
-  fold,
   verifyLog,
   type Document,
   type JudgementDraft,
-  type LogRecord,
   type ProposalCase,
-  type ReviewCandidate,
   type ReviewCase,
   type ReviewSide,
   type VenueReviewCase,
   type VenueReviewSide,
 } from "@event-database/core";
 import {
+  InvalidCatalogueError,
+  openCatalogue,
+  type CatalogueStore,
+} from "@event-database/catalogue";
+import {
+  openReviewCatalogue,
+  type InteractiveReviewItem,
+  type ReviewCatalogue,
+  type ReviewHandle,
+} from "@event-database/catalogue/review";
+import {
   generateCatalogueSite,
   type Locale,
 } from "@event-database/catalogue-site";
+import {
+  CatalogueDataDirectory,
+  InvalidCatalogueAppendError,
+} from "@event-database/catalogue/maintenance";
 
-import { LocalCatalogueData } from "./catalogue-repository.js";
-import { CatalogueDataLayout } from "./catalogue-data-layout.js";
 import { installStaticSite, readTheme } from "./static-site-output.js";
 import {
   pullInbox,
@@ -120,11 +123,10 @@ const pendingUsage = "Usage: event-database pending [--json] [repository]";
 function createCatalogueData(
   root: string,
   dependencies: CliDependencies,
-): LocalCatalogueData {
-  const layout = new CatalogueDataLayout(root);
+): CatalogueDataDirectory {
   return dependencies.appendFile === undefined
-    ? new LocalCatalogueData(layout)
-    : new LocalCatalogueData(layout, { appendFile: dependencies.appendFile });
+    ? new CatalogueDataDirectory(root)
+    : new CatalogueDataDirectory(root, { appendFile: dependencies.appendFile });
 }
 
 export async function runCli(
@@ -218,21 +220,24 @@ async function runBuildSite(
     throw new Error(buildSiteUsage);
   const themeCss =
     themePath === undefined ? undefined : await readTheme(themePath, output);
-  const records = await createCatalogueData(root, dependencies).readLog();
-  const issues = verifyLog(records, { knownExtractors });
-  if (issues.length > 0)
-    throw new Error(
-      `cannot build site: log has ${String(issues.length)} verification issue(s)`,
-    );
-  const site = await generateCatalogueSite(
-    fold(records, { now, rules: foldRules }),
-    {
-      siteName,
-      locale,
-      ...(baseUrl === undefined ? {} : { baseUrl }),
-      ...(themeCss === undefined ? {} : { themeCss }),
-    },
-  );
+  let catalogue: CatalogueStore;
+  try {
+    catalogue = await openCatalogue({ repositoryRoot: root, at: now });
+  } catch (error) {
+    if (error instanceof InvalidCatalogueError) {
+      throw new Error(
+        `cannot build site: log has ${String(error.issues.length)} verification issue(s)`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+  const site = await generateCatalogueSite(catalogue, {
+    siteName,
+    locale,
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(themeCss === undefined ? {} : { themeCss }),
+  });
   await installStaticSite(output, root, site.files);
   for (const diagnostic of site.diagnostics)
     dependencies.writeError(
@@ -470,24 +475,28 @@ async function runReview(
   const data = createCatalogueData(root, dependencies);
 
   if (interactive) {
-    return runInteractiveReview(dependencies, data, now, by);
+    return runInteractiveReview(dependencies, data, root, now, by);
   }
 
-  const records = await data.readLog();
-  const issues = verifyLog(records, { knownExtractors });
-  if (issues.length > 0) {
-    throw new Error(
-      `cannot build review queue: log has ${String(issues.length)} verification issue(s)`,
-    );
-  }
-  dependencies.writeOut(
-    JSON.stringify(
-      buildReviewQueueFromWorkspace(
-        createReviewWorkspace(records, { now, rules: foldRules }),
-      ),
-    ),
-  );
+  const review = await openReviewForCli(root, now);
+  dependencies.writeOut(JSON.stringify(review.machineQueue()));
   return 0;
+}
+
+async function openReviewForCli(
+  repositoryRoot: string,
+  at: Date,
+): Promise<ReviewCatalogue> {
+  try {
+    return await openReviewCatalogue({ repositoryRoot, at });
+  } catch (error) {
+    if (error instanceof InvalidCatalogueError) {
+      throw new Error(
+        `cannot build review queue: log has ${String(error.issues.length)} verification issue(s)`,
+      );
+    }
+    throw error;
+  }
 }
 
 function isPersonReviewer(value: string): boolean {
@@ -526,7 +535,8 @@ function summaryLine(counts: SessionCounts): string {
 
 async function runInteractiveReview(
   dependencies: CliDependencies,
-  data: LocalCatalogueData,
+  data: CatalogueDataDirectory,
+  repositoryRoot: string,
   queueNow: Date,
   initialBy: string | undefined,
 ): Promise<number> {
@@ -559,31 +569,15 @@ async function runInteractiveReview(
 
     try {
       for (;;) {
-        const records = await data.readLog();
-        const logIssues = verifyLog(records, { knownExtractors });
-        if (logIssues.length > 0) {
-          throw new Error(
-            `cannot build review queue: log has ${String(logIssues.length)} verification issue(s)`,
-          );
-        }
-        const workspace = createReviewWorkspace(records, {
-          now: queueNow,
-          rules: foldRules,
-        });
-        const queue = buildReviewQueueFromWorkspace(workspace).filter(
-          (candidate) => !skippedPairs.has(pairKey(candidate)),
-        );
-        const candidate = queue[0];
-        if (candidate === undefined) {
+        const review = await openReviewForCli(repositoryRoot, queueNow);
+        const queue = review
+          .interactiveQueue()
+          .filter((item) => !skippedPairs.has(pairKey(item)));
+        const item = queue[0];
+        if (item === undefined) {
           break;
         }
-
-        const reviewCase =
-          candidate.kind === "proposal"
-            ? buildProposalCaseFromWorkspace(candidate, workspace)
-            : candidate.kind === "venue-pair"
-              ? buildVenueReviewCaseFromWorkspace(candidate, workspace)
-              : buildReviewCaseFromWorkspace(candidate, workspace);
+        const { reviewCase } = item;
         // Position is honest work done, not queue length: a skip still
         // advances it, so it doesn't read as "the queue is shrinking" while
         // the reviewer is actually making progress through it.
@@ -595,24 +589,25 @@ async function runInteractiveReview(
           terminal,
           dependencies,
           reviewCase,
-          records,
+          review,
+          item.handle,
         );
 
         if (outcome === "quit" || outcome === undefined) {
           break;
         }
         if (outcome === "skip") {
-          skippedPairs.add(pairKey(candidate));
+          skippedPairs.add(pairKey(item));
           counts.skipped += 1;
           continue;
         }
 
         const decidedAt = new Date(dependencies.now()).toISOString();
         const batch =
-          reviewCase.kind === "proposal"
+          item.kind === "proposal"
             ? prepareProposalDecision(
                 {
-                  proposal: reviewCase,
+                  proposal: item.decisionTarget,
                   verdict: outcome.verdict,
                   by: reviewer,
                   ...(outcome.reason === undefined
@@ -621,10 +616,10 @@ async function runInteractiveReview(
                 },
                 { at: decidedAt, nextId },
               )
-            : reviewCase.kind === "venue-pair"
+            : item.kind === "venue-pair"
               ? prepareVenueReviewDecision(
                   {
-                    reviewCase,
+                    reviewCase: item.decisionTarget,
                     verdict: outcome.verdict,
                     by: reviewer,
                     ...(outcome.reason === undefined
@@ -638,7 +633,7 @@ async function runInteractiveReview(
                 )
               : prepareReviewDecision(
                   {
-                    reviewCase,
+                    reviewCase: item.decisionTarget,
                     verdict: outcome.verdict,
                     by: reviewer,
                     ...(outcome.reason === undefined
@@ -650,24 +645,25 @@ async function runInteractiveReview(
                   },
                   { at: decidedAt, nextId },
                 );
-        const verificationIssues = verifyLog([...records, ...batch], {
-          knownExtractors,
-        });
-        if (verificationIssues.length > 0) {
-          throw new Error(
-            `cannot record decision: ${verificationIssues
-              .map((issue) => `${issue.code}: ${issue.message}`)
-              .join("; ")}`,
-          );
+        try {
+          await data.appendVerified(batch);
+        } catch (error) {
+          if (error instanceof InvalidCatalogueAppendError) {
+            throw new Error(
+              `cannot record decision: ${error.issues
+                .map((issue) => `${issue.code}: ${issue.message}`)
+                .join("; ")}`,
+            );
+          }
+          throw error;
         }
-        await data.append(batch);
         counts[outcome.verdict] += 1;
-        if (candidate.kind !== "proposal") {
+        if (reviewCase.kind !== "proposal") {
           // Withheld until now so the pairing reasons cannot steer the
           // decision. A proposal has nothing left to reveal: what raised it
           // was on screen from the start.
           dependencies.writeOut(
-            `Matched because: ${candidate.reasons.join(", ")}`,
+            `Matched because: ${review.explanation(item.handle).reasons.join(", ")}`,
           );
         }
       }
@@ -685,12 +681,13 @@ async function runInteractiveReview(
   }
 }
 
-function pairKey(candidate: ReviewCandidate): string {
-  return candidate.kind === "proposal"
-    ? `proposal ${candidate.matchId}`
-    : candidate.kind === "venue-pair"
-      ? `venue ${candidate.venueIds.toSorted().join("\u0000")}`
-      : `event ${candidate.eventIds.toSorted().join("\u0000")}`;
+function pairKey(item: InteractiveReviewItem): string {
+  const reviewCase = item.reviewCase;
+  return reviewCase.kind === "proposal"
+    ? `proposal ${reviewCase.matchId}`
+    : reviewCase.kind === "venue-pair"
+      ? `venue ${[reviewCase.a.venueId, reviewCase.b.venueId].toSorted().join("\u0000")}`
+      : `event ${[reviewCase.a.eventId, reviewCase.b.eventId].toSorted().join("\u0000")}`;
 }
 
 async function askReviewer(terminal: TerminalIo): Promise<string | undefined> {
@@ -710,7 +707,8 @@ async function runDecisionLoop(
   terminal: TerminalIo,
   dependencies: CliDependencies,
   reviewCase: ReviewCase | VenueReviewCase | ProposalCase,
-  records: readonly LogRecord[],
+  review: ReviewCatalogue,
+  handle: ReviewHandle,
 ): Promise<DecisionOutcome> {
   for (;;) {
     const answer = await terminal.question("Decision: ");
@@ -719,10 +717,8 @@ async function runDecisionLoop(
     }
     const control = answer.trim().toLowerCase();
     if (control === "v") {
-      for (const document of caseDocuments(reviewCase, records)) {
-        dependencies.writeOut(
-          `${documentSourceName(document)}: ${document.text}`,
-        );
+      for (const document of review.documentsFor(handle)) {
+        dependencies.writeOut(`${document.sourceName}: ${document.text}`);
       }
       continue;
     }
@@ -799,26 +795,6 @@ async function askSurvivor(
       return bId;
     }
   }
-}
-
-function caseDocuments(
-  reviewCase: ReviewCase | VenueReviewCase | ProposalCase,
-  records: readonly LogRecord[],
-): readonly Document[] {
-  if (reviewCase.kind !== "proposal") {
-    return reviewCaseDocuments(reviewCase, records);
-  }
-  const documents = new Map(
-    records
-      .filter((record): record is Document => record.type === "document")
-      .map((document) => [document.id, document]),
-  );
-  return [...new Set(reviewCase.evidence.map((item) => item.documentId))]
-    .sort((left, right) => left.localeCompare(right))
-    .flatMap((id) => {
-      const document = documents.get(id);
-      return document === undefined ? [] : [document];
-    });
 }
 
 function renderCase(
@@ -964,11 +940,7 @@ async function runVerify(
 ): Promise<number> {
   const [root = process.cwd()] = arguments_;
   const data = createCatalogueData(root, dependencies);
-  const records = await data.readLog();
-  const artefactHashes = await data.artefactHashes(
-    records.filter((record): record is Document => record.type === "document"),
-  );
-  const issues = verifyLog(records, { artefactHashes, knownExtractors });
+  const { records, issues } = await data.verify();
   if (issues.length > 0) {
     for (const issue of issues) {
       dependencies.writeError(

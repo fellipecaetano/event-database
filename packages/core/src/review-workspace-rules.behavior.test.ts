@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createReviewWorkspace } from "./review-workspace.js";
+import { foldFromIndex } from "./fold.js";
 import { createProductionFoldRules, knownExtractorsFor } from "./rules.js";
 import { logRecordSchema, type LogRecord } from "./records.js";
 
@@ -60,6 +61,9 @@ describe("createReviewWorkspace", () => {
       expect.objectContaining({ value: "Evento" }),
     );
     expect(workspace.catalogue.asOf).toBe(options.now.toISOString());
+    expect(workspace.catalogue).toEqual(
+      foldFromIndex(workspace.index, workspace.options),
+    );
   });
 });
 

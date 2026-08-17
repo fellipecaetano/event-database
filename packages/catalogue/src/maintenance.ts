@@ -16,13 +16,16 @@ import { dirname, join, relative, sep } from "node:path";
 
 import {
   ArtefactReference,
+  createProductionFoldRules,
   hashBytes,
+  knownExtractorsFor,
   parseJsonLines,
-  type CatalogueDataStore,
+  verifyLog,
   type Document,
   type IngestTransaction,
   type LogRecord,
   type Observation,
+  type VerificationIssue,
 } from "@event-database/core";
 
 import {
@@ -49,18 +52,32 @@ export interface InboxArtefactInstallation {
   readonly hash: string;
 }
 
-interface LocalCatalogueDataOptions {
+interface CatalogueDataDirectoryOptions {
   readonly appendFile?: AppendFile;
 }
 
 /** Owns all filesystem behavior below one catalogue's data directory. */
-export class LocalCatalogueData implements CatalogueDataStore {
+export interface FullVerificationResult {
+  readonly records: readonly LogRecord[];
+  readonly issues: readonly VerificationIssue[];
+}
+
+export class InvalidCatalogueAppendError extends Error {
+  constructor(readonly issues: readonly VerificationIssue[]) {
+    super("candidate catalogue log is invalid");
+    this.name = "InvalidCatalogueAppendError";
+  }
+}
+
+export class CatalogueDataDirectory {
+  readonly #layout: CatalogueDataLayout;
   private readonly appendFile: AppendFile;
 
   constructor(
-    readonly layout: CatalogueDataLayout,
-    options: LocalCatalogueDataOptions = {},
+    repositoryRoot: string,
+    options: CatalogueDataDirectoryOptions = {},
   ) {
+    this.#layout = new CatalogueDataLayout(repositoryRoot);
     this.appendFile =
       options.appendFile ?? ((path, data) => fsAppendFile(path, data, "utf8"));
   }
@@ -68,7 +85,7 @@ export class LocalCatalogueData implements CatalogueDataStore {
   async readLog(): Promise<readonly LogRecord[]> {
     const records: LogRecord[] = [];
     for (const stream of ["documents", "observations", "judgements"] as const) {
-      const streamPath = this.layout.streamPath(stream);
+      const streamPath = this.#layout.streamPath(stream);
       let entries;
       try {
         entries = await readdir(streamPath, { withFileTypes: true });
@@ -86,7 +103,7 @@ export class LocalCatalogueData implements CatalogueDataStore {
         records.push(
           ...parseJsonLines(
             await readFile(path, "utf8"),
-            relative(this.layout.repositoryRoot, path),
+            relative(this.#layout.repositoryRoot, path),
           ),
         );
       }
@@ -99,6 +116,16 @@ export class LocalCatalogueData implements CatalogueDataStore {
     await this.appendBatches(batches);
   }
 
+  async appendVerified(records: readonly LogRecord[]): Promise<void> {
+    const existing = await this.readLog();
+    const rules = createProductionFoldRules();
+    const issues = verifyLog([...existing, ...records], {
+      knownExtractors: knownExtractorsFor(rules),
+    });
+    if (issues.length > 0) throw new InvalidCatalogueAppendError(issues);
+    await this.append(records);
+  }
+
   async artefactHashes(
     documents: readonly Document[],
   ): Promise<ReadonlyMap<string, string>> {
@@ -107,7 +134,7 @@ export class LocalCatalogueData implements CatalogueDataStore {
       const reference = ArtefactReference.parse(document.artefact);
       try {
         await this.assertSafeArtefactDirectory();
-        const path = this.layout.artefactPath(reference);
+        const path = this.#layout.artefactPath(reference);
         await assertRegularFile(path);
         hashes.set(document.artefact, hashBytes(await readFile(path)));
       } catch (error) {
@@ -120,10 +147,26 @@ export class LocalCatalogueData implements CatalogueDataStore {
     return hashes;
   }
 
+  async verify(): Promise<FullVerificationResult> {
+    const records = await this.readLog();
+    const documents = records.filter(
+      (record): record is Document => record.type === "document",
+    );
+    const artefactHashes = await this.artefactHashes(documents);
+    const rules = createProductionFoldRules();
+    return {
+      records,
+      issues: verifyLog(records, {
+        artefactHashes,
+        knownExtractors: knownExtractorsFor(rules),
+      }),
+    };
+  }
+
   async pendingArtefacts(
     heldHashes: ReadonlySet<string>,
   ): Promise<readonly PendingArtefact[]> {
-    const inbox = this.layout.inboxDirectory();
+    const inbox = this.#layout.inboxDirectory();
     await this.assertSafeInboxDirectory();
     const entries = await readdir(inbox, { withFileTypes: true });
     const pending: PendingArtefact[] = [];
@@ -133,8 +176,8 @@ export class LocalCatalogueData implements CatalogueDataStore {
       if (!entry.isFile() || entry.name.startsWith(".")) {
         continue;
       }
-      const location = this.layout.assertInboxFile(
-        this.layout.inboxPath(entry.name),
+      const location = this.#layout.assertInboxFile(
+        this.#layout.inboxPath(entry.name),
       );
       await this.assertSafeInboxFile(location.path);
       const hash = hashBytes(await readFile(location.path));
@@ -150,7 +193,7 @@ export class LocalCatalogueData implements CatalogueDataStore {
   }
 
   async inspectInboxArtefact(path: string): Promise<PendingArtefact> {
-    const location = this.layout.assertInboxFile(path);
+    const location = this.#layout.assertInboxFile(path);
     await this.assertSafeInboxFile(location.path);
     const hash = hashBytes(await readFile(location.path));
     return {
@@ -164,9 +207,9 @@ export class LocalCatalogueData implements CatalogueDataStore {
     filename: string,
     contents: AsyncIterable<Uint8Array>,
   ): Promise<InboxArtefactInstallation> {
-    const destination = this.layout.inboxPath(filename);
+    const destination = this.#layout.inboxPath(filename);
     const temporary = join(
-      this.layout.inboxDirectory(),
+      this.#layout.inboxDirectory(),
       `.${randomUUID()}.download`,
     );
     await this.assertSafeInboxDirectory();
@@ -205,10 +248,10 @@ export class LocalCatalogueData implements CatalogueDataStore {
     if (input.expectedHash !== input.document.artefact_hash) {
       throw new Error("inbox Artefact hash does not match Document");
     }
-    const source = this.layout.assertInboxFile(input.sourcePath);
+    const source = this.#layout.assertInboxFile(input.sourcePath);
     await this.assertSafeInboxFile(source.path);
     const reference = ArtefactReference.parse(input.document.artefact);
-    const expectedReference = this.layout.retainedArtefact(
+    const expectedReference = this.#layout.retainedArtefact(
       source.filename,
     ).reference;
     if (reference.value !== expectedReference.value) {
@@ -216,12 +259,12 @@ export class LocalCatalogueData implements CatalogueDataStore {
         `Document Artefact must match inbox filename ${source.filename}`,
       );
     }
-    const destination = this.layout.artefactPath(reference);
+    const destination = this.#layout.artefactPath(reference);
     await assertPathAbsent(destination);
     await this.ensureSafeArtefactDirectory();
 
-    const documentPath = this.layout.logFileFor(input.document);
-    const observationPath = this.layout.partitionFile(
+    const documentPath = this.#layout.logFileFor(input.document);
+    const observationPath = this.#layout.partitionFile(
       "observations",
       input.document.at,
     );
@@ -266,7 +309,7 @@ export class LocalCatalogueData implements CatalogueDataStore {
   ): Map<string, readonly LogRecord[]> {
     const batches = new Map<string, LogRecord[]>();
     for (const record of records) {
-      const path = this.layout.logFileFor(record);
+      const path = this.#layout.logFileFor(record);
       const batch = batches.get(path) ?? [];
       batch.push(record);
       batches.set(path, batch);
@@ -275,12 +318,12 @@ export class LocalCatalogueData implements CatalogueDataStore {
   }
 
   private async assertSafeInboxDirectory(): Promise<void> {
-    await assertDirectory(this.layout.inboxDirectory());
+    await assertDirectory(this.#layout.inboxDirectory());
   }
 
   private async assertSafeInboxFile(path: string): Promise<void> {
     await this.assertSafeInboxDirectory();
-    const inbox = await realpath(this.layout.inboxDirectory());
+    const inbox = await realpath(this.#layout.inboxDirectory());
     const file = await lstat(path);
     if (file.isSymbolicLink() || !file.isFile()) {
       throw new Error(`inbox Artefact must be a regular file: ${path}`);
@@ -292,11 +335,11 @@ export class LocalCatalogueData implements CatalogueDataStore {
   }
 
   private async assertSafeArtefactDirectory(): Promise<void> {
-    await assertDirectory(this.layout.artefactDirectory());
+    await assertDirectory(this.#layout.artefactDirectory());
   }
 
   private async ensureSafeArtefactDirectory(): Promise<void> {
-    const directory = this.layout.artefactDirectory();
+    const directory = this.#layout.artefactDirectory();
     try {
       await this.assertSafeArtefactDirectory();
     } catch (error) {
@@ -350,38 +393,7 @@ export class LocalCatalogueData implements CatalogueDataStore {
   }
 }
 
-/** Compatibility adapter for callers that still provide a repository root. */
-export async function readLog(root: string): Promise<readonly LogRecord[]> {
-  return new LocalCatalogueData(new CatalogueDataLayout(root)).readLog();
-}
-
-/** Compatibility adapter for callers that still provide a repository root. */
-export async function readArtefactHashes(
-  root: string,
-  documents: readonly Document[],
-): Promise<ReadonlyMap<string, string>> {
-  return new LocalCatalogueData(new CatalogueDataLayout(root)).artefactHashes(
-    documents,
-  );
-}
-
-/** Compatibility serializer retained for existing append tests. */
-export async function appendRecords(
-  path: string,
-  records: readonly LogRecord[],
-  append: AppendFile,
-): Promise<void> {
-  if (records.length === 0) {
-    return;
-  }
-  await append(
-    path,
-    `${records.map((record) => JSON.stringify(record)).join("\n")}\n`,
-  );
-}
-
-/** Compatibility helper retained for existing rollback tests. */
-export async function assertPathAbsent(path: string): Promise<void> {
+async function assertPathAbsent(path: string): Promise<void> {
   try {
     await lstat(path);
   } catch (error) {
@@ -393,8 +405,7 @@ export async function assertPathAbsent(path: string): Promise<void> {
   throw new Error(`Artefact destination already exists: ${path}`);
 }
 
-/** Compatibility helper retained for existing rollback tests. */
-export async function fileSize(path: string): Promise<number | undefined> {
+async function fileSize(path: string): Promise<number | undefined> {
   try {
     return (await lstat(path)).size;
   } catch (error) {
@@ -405,8 +416,7 @@ export async function fileSize(path: string): Promise<number | undefined> {
   }
 }
 
-/** Compatibility helper retained for existing rollback tests. */
-export async function restoreFile(
+async function restoreFile(
   path: string,
   size: number | undefined,
 ): Promise<void> {

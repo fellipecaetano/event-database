@@ -2,52 +2,55 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import type { Catalogue } from "@event-database/core";
+import type { CatalogueEvent, CatalogueStore } from "@event-database/catalogue";
 
 import { generateCatalogueSite } from "./generate.js";
 
-const catalogue: Catalogue = {
-  asOf: "2026-08-05T12:00:00Z",
-  events: [
-    {
-      id: "019fa69b-63ea-778e-8595-cd28e40852d1",
-      observationIds: [],
-      staleValidationIds: [],
-      facts: {
-        existence: {
-          state: "known",
-          value: true,
-          confidence: "single-source",
-          evidence: [],
-        },
-        title: {
-          state: "known",
-          value: "João </script><script>bad()</script>",
-          confidence: "single-source",
-          evidence: [],
-        },
-        date: {
-          state: "known",
-          value: "2026-08-07",
-          confidence: "single-source",
-          evidence: [],
-        },
-        venue_name: {
-          state: "known",
-          value: "Casa",
-          confidence: "single-source",
-          evidence: [],
-        },
-        ticket_url: {
-          state: "known",
-          value: "javascript:alert(1)",
-          confidence: "single-source",
-          evidence: [],
-        },
-      },
+const event: CatalogueEvent = {
+  kind: "event",
+  id: "019fa69b-63ea-778e-8595-cd28e40852d1",
+  observationIds: [],
+  staleValidationIds: [],
+  facts: {
+    existence: {
+      state: "known",
+      value: true,
+      confidence: "single-source",
+      evidence: [],
     },
-  ],
-  venues: [],
+    title: {
+      state: "known",
+      value: "João </script><script>bad()</script>",
+      confidence: "single-source",
+      evidence: [],
+    },
+    date: {
+      state: "known",
+      value: "2026-08-07",
+      confidence: "single-source",
+      evidence: [],
+    },
+    venueName: {
+      state: "known",
+      value: "Casa",
+      confidence: "single-source",
+      evidence: [],
+    },
+    ticketUrl: {
+      state: "known",
+      value: "javascript:alert(1)",
+      confidence: "single-source",
+      evidence: [],
+    },
+  },
+  rawFact: () => undefined,
+  extras: { get: () => undefined, entries: () => [] },
+};
+
+const catalogue: CatalogueStore = {
+  asOf: "2026-08-05T12:00:00Z",
+  events: { all: () => [event], get: () => event },
+  venues: { all: () => [], get: () => undefined },
 };
 
 describe("generateCatalogueSite", () => {
@@ -120,18 +123,15 @@ describe("generateCatalogueSite", () => {
     ).toBe(second.files.find((file) => file.path.startsWith("events/"))?.path);
     expect(
       first.files.find((file) => file.path.startsWith("events/"))?.path,
-    ).not.toContain(catalogue.events[0]?.id ?? "");
+    ).not.toContain(event.id);
   });
 
   it("fails when two Events produce the same public ID", async () => {
-    const firstEvent = catalogue.events[0];
-    if (firstEvent === undefined)
-      throw new Error("test catalogue has no Event");
     await expect(
       generateCatalogueSite(
         {
           ...catalogue,
-          events: [firstEvent, { ...firstEvent }],
+          events: { all: () => [event, { ...event }], get: () => event },
         },
         { siteName: "Agenda", locale: "pt-BR" },
       ),

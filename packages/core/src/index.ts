@@ -21,8 +21,8 @@ export {
 } from "./entity-reference.js";
 export type { EntityKind, ParsedEntityReference } from "./entity-reference.js";
 export { ArtefactReference } from "./artefact-reference.js";
-export type { CatalogueDataStore } from "./catalogue-data-store.js";
 export { compareJudgementPrecedence } from "./judgement-precedence.js";
+export { buildRedirects, resolveRedirect } from "./identity-resolution.js";
 export { sourceTrustProfiles } from "./source-trust.js";
 export { createProductionFoldRules, knownExtractorsFor } from "./rules.js";
 export type {
@@ -50,7 +50,9 @@ export {
 export type { IngestDraft, ReextractionDraft } from "./ingest.js";
 export { commitIngest } from "./ingest-use-case.js";
 export type { IngestTransaction } from "./ingest-use-case.js";
-export { fold } from "./fold.js";
+export { fold, foldFromIndex } from "./fold.js";
+export { indexLog } from "./log-index.js";
+export type { LogIndex } from "./log-index.js";
 export { selectReadings } from "./reading-selection.js";
 export type {
   Catalogue,

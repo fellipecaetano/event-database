@@ -25,6 +25,67 @@ export function resolveFacts(
   redirects: ReadonlyMap<string, string>,
   rules: FoldRules,
 ): Readonly<Record<string, ProjectedFact>> {
+  const extraFields = observationFields(observations, "extras");
+  const coreFields = observationFields(observations, "claims");
+  const facts = resolveObservedFields(
+    observations,
+    documents,
+    records,
+    rules,
+    "claims",
+  );
+  applyOverrides(
+    facts,
+    entity,
+    records,
+    redirects,
+    (field) => coreFields.has(field) || !extraFields.has(field),
+  );
+  applyValidations(facts, entity, records, redirects, rules, () => true);
+  return facts;
+}
+
+export function resolveExtras(
+  entity: string,
+  observations: readonly Observation[],
+  documents: ReadonlyMap<string, Document>,
+  records: readonly LogRecord[],
+  redirects: ReadonlyMap<string, string>,
+  rules: FoldRules,
+): Readonly<Record<string, ProjectedFact>> {
+  const coreFields = observationFields(observations, "claims");
+  const extras = resolveObservedFields(
+    observations,
+    documents,
+    records,
+    rules,
+    "extras",
+  );
+  applyOverrides(
+    extras,
+    entity,
+    records,
+    redirects,
+    (field) => Object.hasOwn(extras, field) && !coreFields.has(field),
+  );
+  applyValidations(
+    extras,
+    entity,
+    records,
+    redirects,
+    rules,
+    (field) => !coreFields.has(field),
+  );
+  return extras;
+}
+
+function resolveObservedFields(
+  observations: readonly Observation[],
+  documents: ReadonlyMap<string, Document>,
+  records: readonly LogRecord[],
+  rules: FoldRules,
+  bag: "claims" | "extras",
+): Record<string, ProjectedFact> {
   const sourceKinds = buildSourceKinds(records);
   const claimsByField = new Map<string, SourcedClaim[]>();
   for (const observation of observations) {
@@ -33,7 +94,7 @@ export function resolveFacts(
       continue;
     }
     const source = document.v === 1 ? document.source : document.source.value;
-    for (const [field, claim] of Object.entries(observation.claims)) {
+    for (const [field, claim] of Object.entries(observation[bag])) {
       if (claim === undefined) {
         continue;
       }
@@ -59,9 +120,16 @@ export function resolveFacts(
   for (const [field, claims] of claimsByField) {
     facts[field] = selectSupportedValue(selectLatestClaimsBySource(claims));
   }
-  applyOverrides(facts, entity, records, redirects);
-  applyValidations(facts, entity, records, redirects, rules);
   return facts;
+}
+
+function observationFields(
+  observations: readonly Observation[],
+  bag: "claims" | "extras",
+): Set<string> {
+  return new Set(
+    observations.flatMap((observation) => Object.keys(observation[bag])),
+  );
 }
 
 export function canonicalJson(value: JsonValue): string {
@@ -199,6 +267,7 @@ function applyOverrides(
   entity: string,
   records: readonly LogRecord[],
   redirects: ReadonlyMap<string, string>,
+  accepts: (field: string) => boolean,
 ): void {
   const overrides = records
     .filter(
@@ -210,6 +279,9 @@ function applyOverrides(
     )
     .toSorted((left, right) => left.at.localeCompare(right.at));
   for (const override of overrides) {
+    if (!accepts(override.field)) {
+      continue;
+    }
     facts[override.field] = {
       state: "known",
       value: override.value,
@@ -225,13 +297,15 @@ function applyValidations(
   records: readonly LogRecord[],
   redirects: ReadonlyMap<string, string>,
   rules: FoldRules,
+  accepts: (field: string) => boolean,
 ): void {
   for (const validation of records) {
     if (
       validation.type !== "validation" ||
       validation.target.kind !== "fact" ||
       resolveRedirect(validation.target.entity, redirects) !== entity ||
-      validation.rules !== rules.version
+      validation.rules !== rules.version ||
+      !accepts(validation.target.field)
     ) {
       continue;
     }
