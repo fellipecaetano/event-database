@@ -67,6 +67,16 @@ export type CatalogueFact<Value> =
       readonly evidence: readonly string[];
     };
 
+export const CatalogueFact = {
+  valueIfKnown<Value>(fact?: CatalogueFact<Value>): Value | undefined {
+    if (fact !== undefined && fact.state === "known") {
+      return fact.value;
+    } else {
+      return undefined;
+    }
+  },
+};
+
 export interface EventFacts {
   readonly existence: CatalogueFact<boolean>;
   readonly title?: CatalogueFact<string>;

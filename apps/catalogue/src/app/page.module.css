@@ -1,0 +1,20 @@
+.listing {
+  list-style-type: none;
+}
+
+.event {
+  display: flex;
+  align-items: flex-start;
+}
+
+.event .date {
+  flex: 1;
+}
+
+.event .details {
+  flex: 1;
+}
+
+.event .info {
+  flex: 1;
+}
